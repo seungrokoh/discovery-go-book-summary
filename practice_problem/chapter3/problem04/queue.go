@@ -8,8 +8,12 @@ func (q *Queue) Enqueue(item int) {
 	q.items = append(q.items, item)
 }
 
-func (q *Queue) Dequeue() int {
+func (q *Queue) Dequeue() (int, bool) {
+	if len(q.items) <= 0 {
+		return -1, false
+	}
+
 	result := q.items[0]
 	q.items = q.items[1:]
-	return result
+	return result, true
 }
