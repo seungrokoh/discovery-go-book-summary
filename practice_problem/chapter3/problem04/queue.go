@@ -9,11 +9,15 @@ func (q *Queue) Enqueue(item int) {
 }
 
 func (q *Queue) Dequeue() (int, bool) {
-	if len(q.items) <= 0 {
+	if q.Len() <= 0 {
 		return -1, false
 	}
 
 	result := q.items[0]
 	q.items = q.items[1:]
 	return result, true
+}
+
+func (q Queue) Len() int {
+	return len(q.items)
 }

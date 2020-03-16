@@ -59,7 +59,7 @@ func TestQueue(t *testing.T) {
 		queue.Enqueue(3)
 
 		got := queue.items
-		want := []int{2}
+		want := []int{3}
 
 		if !reflect.DeepEqual(got, want) {
 			t.Errorf("got %v, want %v", got, want)
