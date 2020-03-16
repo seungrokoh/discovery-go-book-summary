@@ -1,10 +1,10 @@
 package problem03
 
-func IsContain(slice []string, target string) bool {
-	return BinarySearch(slice, target, 0, len(slice) - 1)
+func IsContain(slice []string, target string) int {
+	return IterativeBinarySearch(slice, target)
 }
 
-func BinarySearch(slice []string, target string, start, end int) bool {
+func RecursiveBinarySearch(slice []string, target string, start, end int) bool {
 	if start > end {
 		return false
 	}
@@ -14,7 +14,27 @@ func BinarySearch(slice []string, target string, start, end int) bool {
 	}
 
 	if slice[middle] > target {
-		return BinarySearch(slice, target, start, middle - 1)
+		return RecursiveBinarySearch(slice, target, start, middle - 1)
 	}
-	return BinarySearch(slice, target, middle + 1, end)
+	return RecursiveBinarySearch(slice, target, middle + 1, end)
+}
+
+func IterativeBinarySearch(slice []string, target string) int {
+	start := 0
+	end := len(slice) - 1
+
+	for start <= end {
+		middle := (start + end) / 2
+
+		if slice[middle] == target {
+			return middle
+		}
+
+		if slice[middle] > target {
+			end = middle - 1
+		} else if slice[middle] < target {
+			start = middle + 1
+		}
+	}
+	return -1
 }
