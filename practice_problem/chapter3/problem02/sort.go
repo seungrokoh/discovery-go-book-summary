@@ -1,6 +1,6 @@
 package problem02
 
-func SelectionSort(nums []int) []int {
+func SelectionSort(nums []int) {
 	for i := 0; i < len(nums) - 1; i++ {
 		min := i
 		for j := i + 1; j < len(nums); j++ {
@@ -10,5 +10,4 @@ func SelectionSort(nums []int) []int {
 		}
 		nums[i], nums[min] = nums[min], nums[i]
 	}
-	return nums
 }
