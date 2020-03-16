@@ -321,3 +321,198 @@ m[key] = value
 * 맵은 순서가 보장되지 않기 때문에 순서에 의존적인 코딩을 하면 안된다.
 * 해시 함수가 바뀔 수 있기 때문이다.
 * 맵 테스트를 할 때 비교하는 방법은 reflect.DeepEqual 을 이용하면 된다.
+
+***
+# 3.4 입출력
+Go의 입출력에 대한 표준 라이브러리는 io package에 들어있다. fmt package에 형식을 이용한 입출력도 구현되어 있다.
+
+## 3.4.1 io.Reader와 io.Writer
+* 입출력은 io.Reader와 io.Writer 인터페이스와 파생된 다른 인터페이스들을 이용한다.
+* fmt package에서 F로 시작하는 함수들이 io.Reader, io.Writer를 인자로 받는다.
+* 파일뿐만 아니라 버퍼, 소켓 등을 이용해서 읽고 쓸 수 있다
+* 따라서 기본 입출력 역시 파일을 읽고 쓰는 것과 거의 동일한 방법으로 읽고 쓸 수 있다.
+* 함수를 작성할 때 io.Reader, io.Writer 등을 받아서 처리하게 만드는 습관을 들이자.
+
+> io.Reader, io.Writer를 이용하면 표준 입출력, 파일, 네트워크 등 모두 적용할 수 있으며 테스트 등을 할 때도 좋다.
+
+## 3.4.2 파일 읽기
+```go
+f, err := os.Open(filename)
+if err != nil {
+    return err // 혹은 다른 에러 처리
+}
+defer f.Close()
+
+var num int
+if _, err := fmt.Fscanf(f, "%d\n", &num); err == nil {
+    // 읽은 num 값 사용
+}
+```
+
+* is.Open()은 파일 오브젝트, 에러 두 가지 반환값이 있다.
+* defer는 해당 함수를 벗어날 때 호출할 함수를 등록하는 역할을 한다.
+* open 이후 defer로 Close() 하는 습관을 들이자.
+
+## 3.4.3 파일 쓰기
+```go
+f, err := os.Create(filename)
+if err != nil {
+    return err // 혹은 다른 에러 처리
+}
+defer f.Close()
+if _, err := fmt.Fprintf(f, "%d\n", num); err != nil {
+    return err // 혹은 다른 에러 처리
+}
+```
+
+## 3.4.4 텍스트 리스트 읽고 쓰기
+:heavy_check_mark: 문자열 슬라이스 라인별로 출력
+```go
+func WriteTo(w io.Writer, lines []string) error {
+    for _, line := range lines {
+        if _, err := fmt.Fprintln(w, line); err != nil {
+            return err
+        }
+    }
+    return nil
+}
+```
+
+:heavy_check_mark: 문자열 읽기
+```go
+func ReadFrom(r io.Reader, lines *[]string) error {
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		*lines = append(*lines, scanner.Text())
+	}
+	if err := scanner.Err(); err != nil {
+		return err
+	}
+	return nil
+}
+```
+
+:heavy_check_mark: 읽기 및 쓰기 사용
+```go
+func ExampleWriteTo() {
+	lines := []string{
+		"bill@mail.com",
+		"tom@mail.com",
+		"jane@mail.com",
+	}
+	if err := WriteTo(os.Stdout, lines); err != nil {
+		fmt.Println(err)
+	}
+	// Output:
+	// bill@mail.com
+	// tom@mail.com
+	// jane@mail.com
+}
+
+func ExampleReadFrom() {
+	r := strings.NewReader("bill\ntom\njane\n")
+	var lines []string
+	if err := ReadFrom(r, &lines); err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(lines)
+	// Output:
+	// [bill tom jane]
+}
+```
+
+## 3.4.5 그래프의 인접 리스트 읽고 쓰기
+
+:heavy_check_mark: 출력함수
+```go
+func WriteTo(w io.Writer, adjList [][]int) error {
+	size := len(adjList)
+	if _, err := fmt.Fprintf(w, "%d", size); err != nil {
+		return err
+	}
+	for i := 0; i < size; i++ {
+		lsize := len(adjList[i])
+		if _, err := fmt.Fprintf(w, "\n%d", lsize); err != nil {
+			return err
+		}
+		for j := 0; j < lsize; j++ {
+			if _, err := fmt.Fprintf(w, " %d", adjList[i][j]); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := fmt.Fprintf(w, "\n"); err != nil {
+		return err
+	}
+	return nil
+}
+```
+
+:heavy_check_mark: 입력함수
+```go
+func ReadFrom(r io.Reader, adjList *[][]int) error {
+	var size int
+	if _, err := fmt.Fscanf(r, "%d", &size); err != nil {
+		return err
+	}
+	*adjList = make([][]int, size)
+	for i := 0; i < size; i++ {
+		var lsize int
+		if _, err := fmt.Fscanf(r, "\n%d", &lsize); err != nil {
+			return err
+		}
+		(*adjList)[i] = make([]int, lsize)
+		for j := 0; j < lsize; j++ {
+			if _, err := fmt.Fscanf(r, " %d", &(*adjList)[i][j]); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := fmt.Fscanf(r, "\n"); err != nil {
+		return err
+	}
+	return nil
+}
+```
+
+:heavy_check_mark: 테스트 함수
+```go
+package graph
+
+import (
+	"bytes"
+	"fmt"
+	"strings"
+	"testing"
+)
+
+func TestWriteTo(t *testing.T) {
+	adjList := [][]int{
+		{3, 4},
+		{0, 2},
+		{3},
+		{2, 4},
+		{0},
+	}
+	w := bytes.NewBuffer(nil)
+	if err := WriteTo(w, adjList); err != nil {
+		t.Error(err)
+	}
+	expected := "5\n2 3 4\n2 0 2\n1 3\n2 2 4\n1 0\n"
+	if expected != w.String() {
+		t.Logf("expected: %s\n", expected)
+		t.Errorf("found: %s\n", w.String())
+	}
+}
+
+func ExampleReadFrom() {
+	r := strings.NewReader("5\n2 3 4\n2 0 2\n1 3\n2 2 4\n1 0\n")
+	var adjList [][]int
+	if err := ReadFrom(r, &adjList); err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println(adjList)
+	// Output:
+	// [[3 4] [0 2] [3] [2 4] [0]]
+}
+```
