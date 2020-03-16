@@ -5,21 +5,19 @@ func NewMultiSet() map[string]int {
 }
 
 func Count(m map[string]int, val string) int {
-	if val, exist := m[val]; exist {
-		return val
-	}
-	return 0
+	return m[val]
 }
 
 func Insert(m map[string]int, val string) {
-	m[val] += 1
+	m[val]++
 }
 
 func Erase(m map[string]int, val string) {
-	if m[val] == 0 {
+	if m[val] <= 1 {
+		delete(m, val)
 		return
 	}
-	m[val] = m[val] - 1
+	m[val]--
 }
 
 func String(m map[string]int) string {
