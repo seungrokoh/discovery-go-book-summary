@@ -278,6 +278,133 @@ func ExampleReadFrom_append() {
 * lines라는 문자열 슬라이스를 ReadFrom에 넘겨주는 함수 리터럴 안에서 사용할 수 있다.
 * ReadFrom에 넘기는 함수는 그 함수가 이용하는 변수들도 함께 가지고 넘어간다.
 
+
+
+클로저에 대해 더 자세히 알아보자. 
+
+
+
+클로저는 함수와 그 함수가 선언됐을 때의 렉시컬 환경(Lexical environment)과의 조합이다. 내용을 이해하기 위해 예제를 살펴보자.
+
+
+
+```go
+func OuterFunc() {
+	x := 10
+	innerFunc := func() { fmt.Println(x) }
+	innerFunc()
+}
+func main() {
+	OuterFunc()
+}
+
+// Output:
+// 10
+```
+
+위 예제에서 OuterFunc 내부에 innerFunc가 선언되고 호출되었다. 이때 innerFunc는 OuterFunc 내부에 선언되었기 때문에 OuterFunc 내부 변수에 접근할 수 있게 된다. 따라서 x의 값인 10이 호출된다.
+
+이제 다른 예제를 보자.
+
+
+
+```go
+func OuterFunc() func() {
+    x := 10
+	innerFunc := func() {
+		fmt.Println(x)
+		x++
+	}
+	return innerFunc
+}
+
+func main() {
+    inner := OuterFunc()
+    inner()
+    inner()
+    inner()
+}
+
+// Output:
+// 10
+// 11
+// 12
+```
+
+OuterFunc는 innerFunc를 반환하고 끝났다. 예상대로라면 함수가 종료됐기 때문에 지역변수인 x는 소멸되어야 한다. 하지만 마치 x가 살아있는 듯이 inner()를 호출하면 10이 출력되고 계속 출력했을 때 값이 증가하는걸 볼 수 있다.
+
+
+
+이렇게 자신을 포함한 외부함수보다 내부함수가 더 오래 유지되는 경우, 외부 함수 밖에서 내부함수가 호출되더라도 외부함수의 지역 변수에 접근할 수 있는 함수를 클로저라고 한다.
+
+
+
+> 즉, **클로저는 반환된 내부함수가 자신이 선언됐을 때의 환경(Lexical environment)인 스코프를 기억하여 자신이 선언됐을 때의 환경(스코프) 밖에서 호출되어도 그 환경(스코프)에 접근할 수 있는 함수**를 말한다. 이를 조금 더 간단히 말하면 **클로저는 자신이 생성될 때의 환경(Lexical environment)을 기억하는 함수다**라고 말할 수 있겠다.
+
+
+
+## 클로저 사용
+
+클로저가 많이 사용되는 유형에 대해서 알아본다.
+
+[reference](https://poiemaweb.com/js-closure)
+
+
+
+### 1. 상태 유지
+
+현재 상태를 기억하고 변경된 최신 상태를 기억하는 것이다.
+
+전등을 키고 끌 수 있는 toggle 버튼을 만든다고 가정했을 때 현재 전등의 상태를 나타내기 위하여 전역변수를 선언해야 한다. 하지만 전역변수로 선언하면 외부에서 접근할 수 있고 변경할 수 있기 때문에 오류를 유발시킬 수 있으므로 지양해야 한다.
+
+
+
+이때 클로저를 사용하면 최신 상태를 유지할 수 있다.  동작하는 코드는 아니지만 간단하게 전등을 키고 끄는 함수를 클로저로 만든다면 다음과 같다.
+
+```go
+func Toggle() func() {
+    isOn := false
+    return func() {
+        // change display ...
+        isOn = !isOn
+    }
+}
+
+func main() {
+    toggle := Toggle()
+    LightBulb.onClickListener {
+        toggle()
+    }
+}
+
+```
+
+
+
+### 2. 전역변수 사용의 억제
+
+버튼이 클릭될 때마다 클릭한 횟수가 누적되는 프로그램을 만든다고 가정해보자. 클릭된 횟수가 유지되어야 하는 상황이다. 이때 전역변수를 사용한다면 오류를 발생시킬 가능성이 있으므로 좋지 않은 코드다. 이를 클로저를 이용하여 작성해보자.
+
+
+
+```go
+func Increase() func() int {
+	counter := 0
+	return func() int {
+		counter++
+		return counter
+	}
+}
+func main() {
+	counter := Increase()
+    button.onClickListener {
+        display(counter())
+    }
+}
+```
+
+
+
 ## 4.2.4 생성기
 * 함수를 호출할 때마다 증가된 값을 받을 수 있는 생성기(generator)를 만들어보자.
 
