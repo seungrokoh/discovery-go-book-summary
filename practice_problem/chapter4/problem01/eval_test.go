@@ -36,7 +36,7 @@ func TestEval(t *testing.T) {
 
 	var got []int
 	got = append(got, eval("5"))
-	got = append(got, eval("1 + 2"))
+	got = append(got, eval("1 +      2"))
 	got = append(got, eval("1 - 2 - 4"))
 	got = append(got, eval("( 3 - 2 ** 3 ) * ( -2 )"))
 	got = append(got, eval("3 * ( ( 3 + 1 ) * 3 ) / 2"))

@@ -56,7 +56,7 @@ func Eval(opMap map[string]BinOp, prec PrecMap, expr string) int {
 	}
 
 	// 사용자에게 입력받은 expr을 처리하는 for 문
-	for _, token := range strings.Split(expr, " ") {
+	for _, token := range strings.Fields(expr) {
 		if token == "(" {
 			ops = append(ops, token)
 		} else if _, ok := prec[token]; ok {
