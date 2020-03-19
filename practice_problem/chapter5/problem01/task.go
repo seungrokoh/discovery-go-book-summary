@@ -98,6 +98,15 @@ func (t Task) String() string {
 	return fmt.Sprintf("[%s] %s %s", check, t.Title, t.Deadline)
 }
 
+func (t *Task) MarkDone() {
+	t.Status = DONE
+	if t.SubTasks != nil {
+		for i := range t.SubTasks {
+			t.SubTasks[i].MarkDone()
+		}
+	}
+}
+
 // IncludeSubTasks is a Task but its String method returns the string
 // including the sub tasks.
 type IncludeSubTasks Task
