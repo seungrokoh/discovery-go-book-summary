@@ -9,7 +9,7 @@ import (
 	"net/http"
 )
 
-type ID string
+type ID int64
 
 type DataAccess interface {
 	Get(id ID) (task.Task, error)
@@ -100,4 +100,52 @@ type Response struct {
 	ID    ID            `json:"id,omitempty"`
 	Task  task.Task     `json:"task"`
 	Error ResponseError `json:"error"`
+}
+
+var m = NewMemoryDataAccess()
+
+const pathPrefix = "/api/v1/task/"
+
+func apiHandler(w http.ResponseWriter, r *http.Request) {
+	getID := func() (ID, error) {
+		id := task.ID(r.URL.Path[len(pathPrefix):])
+		if id == "" {
+			return id, errors.New("apiHandler: ID is empty")
+		}
+		return id, nil
+	}
+	getTasks := func() ([]task.Task, error) {
+		var result []task.Task
+		if err := r.ParseForm(); err != nil {
+			return nil, err
+		}
+		encodedTasks, ok := r.PostForm["task"]
+		if !ok {
+			return nil, errors.New("task parameter expected")
+		}
+		for _, encodedTasks := range encodedTasks {
+			var t task.Task
+			if err := json.Unmarshal([]byte(encodedTasks), &t); err != nil {
+				return nil, err
+			}
+			result = append(result, t)
+		}
+		return result, nil
+	}
+
+	switch r.Method {
+	case "GET":
+		panic("unimplemented")
+	case "PUT":
+		panic("unimplemented")
+	case "POST":
+		panic("unimplemented")
+	case "DELETE":
+		panic("unimplemented")
+	}
+}
+
+func main() {
+	http.HandleFunc(pathPrefix, apiHandler)
+	log.Fatal(http.ListenAndServe(":8887", nil))
 }
