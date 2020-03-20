@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jaeyeom/gogo/task"
 	"log"
 	"net/http"
+
+	"github.com/jaeyeom/gogo/task"
 )
 
-type ID int64
+type ID string
 
 type DataAccess interface {
 	Get(id ID) (task.Task, error)
@@ -110,9 +111,9 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	getID := func() (ID, error) {
 		id := task.ID(r.URL.Path[len(pathPrefix):])
 		if id == "" {
-			return id, errors.New("apiHandler: ID is empty")
+			return ID(id), errors.New("apiHandler: ID is empty")
 		}
-		return id, nil
+		return ID(id), nil
 	}
 	getTasks := func() ([]task.Task, error) {
 		var result []task.Task
@@ -135,13 +136,76 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
-		panic("unimplemented")
+		id, err := getID()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		t, err := m.Get(id)
+		err = json.NewEncoder(w).Encode(Response{
+			ID:    id,
+			Task:  t,
+			Error: ResponseError{err},
+		})
+		if err != nil {
+			log.Println(err)
+		}
 	case "PUT":
-		panic("unimplemented")
+		id, err := getID()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		tasks, err := getTasks()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		for _, t := range tasks {
+			err = m.Put(id, t)
+			err = json.NewEncoder(w).Encode(Response{
+				ID:    id,
+				Task:  t,
+				Error: ResponseError{err},
+			})
+			if err != nil {
+				log.Println(err)
+				return
+			}
+		}
 	case "POST":
-		panic("unimplemented")
+		tasks, err := getTasks()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		for _, t := range tasks {
+			id, err := m.Post(t)
+			err = json.NewEncoder(w).Encode(Response{
+				ID:    id,
+				Task:  t,
+				Error: ResponseError{err},
+			})
+			if err != nil {
+				log.Println(err)
+				return
+			}
+		}
 	case "DELETE":
-		panic("unimplemented")
+		id, err := getID()
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		err = m.Delete(id)
+		err = json.NewEncoder(w).Encode(Response{
+			ID:    id,
+			Error: ResponseError{err},
+		})
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 }
 
