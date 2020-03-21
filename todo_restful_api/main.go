@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 
@@ -209,7 +210,43 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// htmlHandler
+const htmlPrefix = "/task/"
+
+var tmpl = template.Must(template.ParseGlob("html/*html"))
+
+func htmlHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		log.Println(r.Method, "method is not supported")
+		return
+	}
+	getID := func() (ID, error) {
+		id := task.ID(r.URL.Path[len(htmlPrefix):])
+		if id == "" {
+			return ID(id), errors.New("htmlHandler: ID is empty")
+		}
+		return ID(id), nil
+	}
+	id, err := getID()
+
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	t, err := m.Get(id)
+	err = tmpl.ExecuteTemplate(w, "task.html", &Response {
+		ID: id,
+		Task: t,
+		Error: ResponseError{err},
+	})
+	if err != nil {
+		log.Println(err)
+		return
+	}
+}
+
 func main() {
+	http.HandleFunc(htmlPrefix, htmlHandler)
 	http.HandleFunc(pathPrefix, apiHandler)
 	log.Fatal(http.ListenAndServe(":8887", nil))
 }
