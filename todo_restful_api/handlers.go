@@ -26,18 +26,35 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := getID()
 	if err != nil {
-		log.Println(err)
-		return
-	}
-	t, err := m.Get(id)
-	err = tmpl.ExecuteTemplate(w, "task.html", &Response{
-		ID:    id,
-		Task:  t,
-		Error: ResponseError{err},
-	})
-	if err != nil {
-		log.Println(err)
-		return
+		tasks, err := m.GetAll()
+		if len(tasks) <= 0 {
+			// tasks가 한 개도 없을 경우
+			log.Println(err)
+			return
+		}
+
+		for i := 1; i <= len(tasks); i++ {
+			err = tmpl.ExecuteTemplate(w, "task.html", &Response{
+				ID:    task.ID(strconv.Itoa(i)),
+				Task:  tasks[i-1],
+				Error: ResponseError{err},
+			})
+			if err != nil {
+				log.Println(err)
+				return
+			}
+		}
+	} else {
+		t, err := m.Get(id)
+		if err != nil {
+			log.Println(err)
+			return
+		}
+		err = tmpl.ExecuteTemplate(w, "task.html", &Response{
+			ID:    id,
+			Task:  t,
+			Error: ResponseError{err},
+		})
 	}
 }
 
@@ -74,14 +91,14 @@ func apiGetHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func apiAllTasksHandler(w http.ResponseWriter, r *http.Request) {
-	tasks, err:= m.GetAll()
+	tasks, err := m.GetAll()
 
 	var responses []Response
 
 	for i := 1; i <= len(tasks); i++ {
-		responses = append(responses, Response {
-			ID: task.ID(strconv.Itoa(i)),
-			Task: tasks[i - 1],
+		responses = append(responses, Response{
+			ID:    task.ID(strconv.Itoa(i)),
+			Task:  tasks[i-1],
 			Error: ResponseError{err},
 		})
 	}

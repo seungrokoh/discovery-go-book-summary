@@ -15,7 +15,6 @@ const (
 func main() {
 	r := mux.NewRouter()
 	r.PathPrefix(htmlPathPrefix).
-		Path(idPattern).
 		Methods("GET").
 		HandlerFunc(htmlHandler)
 

@@ -47,4 +47,3 @@ type Response struct {
 	Task  task.Task     `json:"task"`
 	Error ResponseError `json:"error"`
 }
-
