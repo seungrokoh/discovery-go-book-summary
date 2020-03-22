@@ -3,41 +3,21 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"github.com/jaeyeom/gogo/task"
 	"log"
 	"net/http"
 	"text/template"
 )
 
-var m = NewMemoryDataAccess()
+var m = NewInMemoryAccessor()
 
-const pathPrefix = "/api/v1/task/"
 
 func apiHandler(w http.ResponseWriter, r *http.Request) {
 	getID := func() (ID, error) {
-		id := task.ID(r.URL.Path[len(pathPrefix):])
+		id := ID(r.URL.Path[len(apiPathPrefix):])
 		if id == "" {
 			return ID(id), errors.New("apiHandler: ID is empty")
 		}
 		return ID(id), nil
-	}
-	getTasks := func() ([]task.Task, error) {
-		var result []task.Task
-		if err := r.ParseForm(); err != nil {
-			return nil, err
-		}
-		encodedTasks, ok := r.PostForm["task"]
-		if !ok {
-			return nil, errors.New("task parameter expected")
-		}
-		for _, encodedTasks := range encodedTasks {
-			var t task.Task
-			if err := json.Unmarshal([]byte(encodedTasks), &t); err != nil {
-				return nil, err
-			}
-			result = append(result, t)
-		}
-		return result, nil
 	}
 
 	switch r.Method {
@@ -116,7 +96,6 @@ func apiHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // htmlHandler
-const htmlPrefix = "/task/"
 
 var tmpl = template.Must(template.ParseGlob("html/*html"))
 
@@ -126,7 +105,7 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	getID := func() (ID, error) {
-		id := task.ID(r.URL.Path[len(htmlPrefix):])
+		id := ID(r.URL.Path[len(htmlPathPrefix):])
 		if id == "" {
 			return ID(id), errors.New("htmlHandler: ID is empty")
 		}
@@ -139,7 +118,7 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	t, err := m.Get(id)
-	err = tmpl.ExecuteTemplate(w, "task.html", &Response {
+	err = tmpl.ExecuteTemplate(w, "html", &Response {
 		ID: id,
 		Task: t,
 		Error: ResponseError{err},
@@ -148,4 +127,23 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
+}
+
+func getTasks(r *http.Request) ([]Task, error) {
+	var result []Task
+	if err := r.ParseForm(); err != nil {
+		return nil, err
+	}
+	encodedTasks, ok := r.PostForm["task"]
+	if !ok {
+		return nil, errors.New("task parameter expected")
+	}
+	for _, encodedTasks := range encodedTasks {
+		var t Task
+		if err := json.Unmarshal([]byte(encodedTasks), &t); err != nil {
+			return nil, err
+		}
+		result = append(result, t)
+	}
+	return result, nil
 }
