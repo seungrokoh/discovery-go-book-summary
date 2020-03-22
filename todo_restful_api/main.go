@@ -21,6 +21,7 @@ func main() {
 
 	s := r.PathPrefix(apiPathPrefix).Subrouter()
 	s.HandleFunc(idPattern, apiGetHandler).Methods("GET")
+	s.HandleFunc("/", apiAllTasksHandler).Methods("GET")
 	s.HandleFunc(idPattern, apiPutHandler).Methods("PUT")
 	s.HandleFunc("/", apiPostHandler).Methods("POST")
 	s.HandleFunc(idPattern, apiDeleteHandler).Methods("DELETE")

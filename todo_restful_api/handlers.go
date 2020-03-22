@@ -3,9 +3,11 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
+	"strconv"
 	"text/template"
 	"todo/task"
 )
@@ -66,6 +68,26 @@ func apiGetHandler(w http.ResponseWriter, r *http.Request) {
 		Task:  t,
 		Error: ResponseError{err},
 	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func apiAllTasksHandler(w http.ResponseWriter, r *http.Request) {
+	tasks, err:= m.GetAll()
+
+	var responses []Response
+
+	for i := 1; i <= len(tasks); i++ {
+		responses = append(responses, Response {
+			ID: task.ID(strconv.Itoa(i)),
+			Task: tasks[i - 1],
+			Error: ResponseError{err},
+		})
+	}
+
+	err = json.NewEncoder(w).Encode(responses)
+	fmt.Println(responses)
 	if err != nil {
 		log.Println(err)
 	}

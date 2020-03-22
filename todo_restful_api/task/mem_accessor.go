@@ -27,6 +27,18 @@ func (m *InMemoryAccessor) Get(id ID) (Task, error) {
 	return t, nil
 }
 
+func (m *InMemoryAccessor) GetAll() ([]Task, error) {
+	if len(m.tasks) <= 0 {
+		return []Task{}, ErrTaskNotExist
+	}
+	var result []Task
+	for id := range m.tasks {
+		task, _ := m.Get(id)
+		result = append(result, task)
+	}
+	return result, nil
+}
+
 func (m *InMemoryAccessor) Put(id ID, t Task) error {
 	if _, exists := m.tasks[id]; !exists {
 		return ErrTaskNotExist
