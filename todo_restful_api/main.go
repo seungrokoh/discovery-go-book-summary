@@ -25,6 +25,7 @@ func main() {
 	s.HandleFunc("/", apiPostHandler).Methods("POST")
 	s.HandleFunc(idPattern, apiDeleteHandler).Methods("DELETE")
 
+	http.Handle("/css/", http.StripPrefix("/css/", http.FileServer(http.Dir("./cssfiles"))))
 	http.Handle("/", r)
 	log.Fatal(http.ListenAndServe(":8887", nil))
 }
