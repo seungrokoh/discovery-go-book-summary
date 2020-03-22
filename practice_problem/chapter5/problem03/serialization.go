@@ -8,8 +8,8 @@ import (
 
 type ID int64
 type Task struct {
-	Title string 	`json:"title"`
-	ID ID			`json:"id"`
+	Title string `json:"title"`
+	ID    ID     `json:"id"`
 }
 
 func (i *ID) UnmarshalJSON(data []byte) error {
@@ -20,7 +20,10 @@ func (i *ID) UnmarshalJSON(data []byte) error {
 	//fmt.Println(reflect.TypeOf(v))
 	switch x := v.(type) {
 	case string:
-		s, _ := strconv.ParseInt(x, 10, 64)
+		s, err := strconv.ParseInt(x, 10, 64)
+		if err != nil {
+			return err
+		}
 		*i = ID(s)
 	case float64:
 		*i = ID(x)

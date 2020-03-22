@@ -9,25 +9,24 @@ import (
 
 func TestTask_UnmarshalJSON(t *testing.T) {
 	cases := []struct {
-		in []byte
+		in  []byte
 		out Task
-	} {
+	}{
 		{
 			[]byte(`{"Title":"title1","ID":64}`),
-			Task {
+			Task{
 				Title: "title1",
-				ID: 64,
+				ID:    64,
 			},
 		},
 		{
 			[]byte(`{"Title":"title2","ID":"64"}`),
 			Task{
 				Title: "title2",
-				ID: 64,
+				ID:    64,
 			},
 		},
 	}
-
 
 	for i, c := range cases {
 		var task Task
