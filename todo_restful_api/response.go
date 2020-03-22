@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/jaeyeom/gogo/task"
+	"todo/task"
 )
+
+var ErrTaskNotExist = errors.New("task does not exist")
 
 type ResponseError struct {
 	Err error
@@ -41,7 +43,8 @@ func (err *ResponseError) UnmarshalJSON(b []byte) error {
 }
 
 type Response struct {
-	ID    ID            `json:"id,omitempty"`
+	ID    task.ID       `json:"id,omitempty"`
 	Task  task.Task     `json:"task"`
 	Error ResponseError `json:"error"`
 }
+

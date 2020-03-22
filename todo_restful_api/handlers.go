@@ -3,124 +3,34 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"github.com/gorilla/mux"
 	"log"
 	"net/http"
 	"text/template"
+	"todo/task"
 )
 
-var m = NewInMemoryAccessor()
+var m = task.NewInMemoryAccessor()
 
-
-func apiHandler(w http.ResponseWriter, r *http.Request) {
-	getID := func() (ID, error) {
-		id := ID(r.URL.Path[len(apiPathPrefix):])
-		if id == "" {
-			return ID(id), errors.New("apiHandler: ID is empty")
-		}
-		return ID(id), nil
-	}
-
-	switch r.Method {
-	case "GET":
-		id, err := getID()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		t, err := m.Get(id)
-		err = json.NewEncoder(w).Encode(Response{
-			ID:    id,
-			Task:  t,
-			Error: ResponseError{err},
-		})
-		if err != nil {
-			log.Println(err)
-		}
-	case "PUT":
-		id, err := getID()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		tasks, err := getTasks()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		for _, t := range tasks {
-			err = m.Put(id, t)
-			err = json.NewEncoder(w).Encode(Response{
-				ID:    id,
-				Task:  t,
-				Error: ResponseError{err},
-			})
-			if err != nil {
-				log.Println(err)
-				return
-			}
-		}
-	case "POST":
-		tasks, err := getTasks()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		for _, t := range tasks {
-			id, err := m.Post(t)
-			err = json.NewEncoder(w).Encode(Response{
-				ID:    id,
-				Task:  t,
-				Error: ResponseError{err},
-			})
-			if err != nil {
-				log.Println(err)
-				return
-			}
-		}
-	case "DELETE":
-		id, err := getID()
-		if err != nil {
-			log.Println(err)
-			return
-		}
-		err = m.Delete(id)
-		err = json.NewEncoder(w).Encode(Response{
-			ID:    id,
-			Error: ResponseError{err},
-		})
-		if err != nil {
-			log.Println(err)
-			return
-		}
-	}
-}
-
-// htmlHandler
-
-var tmpl = template.Must(template.ParseGlob("html/*html"))
+var tmpl = template.Must(template.ParseGlob("html/*.html"))
 
 func htmlHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "GET" {
-		log.Println(r.Method, "method is not supported")
-		return
-	}
-	getID := func() (ID, error) {
-		id := ID(r.URL.Path[len(htmlPathPrefix):])
+	getID := func() (task.ID, error) {
+		id := task.ID(r.URL.Path[len(htmlPathPrefix):])
 		if id == "" {
-			return ID(id), errors.New("htmlHandler: ID is empty")
+			return id, errors.New("htmlHandler: ID is empty")
 		}
-		return ID(id), nil
+		return id, nil
 	}
 	id, err := getID()
-
 	if err != nil {
 		log.Println(err)
 		return
 	}
 	t, err := m.Get(id)
-	err = tmpl.ExecuteTemplate(w, "html", &Response {
-		ID: id,
-		Task: t,
+	err = tmpl.ExecuteTemplate(w, "task.html", &Response{
+		ID:    id,
+		Task:  t,
 		Error: ResponseError{err},
 	})
 	if err != nil {
@@ -129,8 +39,8 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getTasks(r *http.Request) ([]Task, error) {
-	var result []Task
+func getTasks(r *http.Request) ([]task.Task, error) {
+	var result []task.Task
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
@@ -139,11 +49,78 @@ func getTasks(r *http.Request) ([]Task, error) {
 		return nil, errors.New("task parameter expected")
 	}
 	for _, encodedTasks := range encodedTasks {
-		var t Task
+		var t task.Task
 		if err := json.Unmarshal([]byte(encodedTasks), &t); err != nil {
 			return nil, err
 		}
 		result = append(result, t)
 	}
 	return result, nil
+}
+
+func apiGetHandler(w http.ResponseWriter, r *http.Request) {
+	id := task.ID(mux.Vars(r)["id"])
+	t, err := m.Get(id)
+	err = json.NewEncoder(w).Encode(Response{
+		ID:    id,
+		Task:  t,
+		Error: ResponseError{err},
+	})
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func apiPutHandler(w http.ResponseWriter, r *http.Request) {
+	id := task.ID(mux.Vars(r)["id"])
+	tasks, err := getTasks(r)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	for _, t := range tasks {
+		err = m.Put(id, t)
+		err = json.NewEncoder(w).Encode(Response{
+			ID:    id,
+			Task:  t,
+			Error: ResponseError{err},
+		})
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
+}
+
+func apiPostHandler(w http.ResponseWriter, r *http.Request) {
+	tasks, err := getTasks(r)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	for _, t := range tasks {
+		id, err := m.Post(t)
+		err = json.NewEncoder(w).Encode(Response{
+			ID:    id,
+			Task:  t,
+			Error: ResponseError{err},
+		})
+		if err != nil {
+			log.Println(err)
+			return
+		}
+	}
+}
+
+func apiDeleteHandler(w http.ResponseWriter, r *http.Request) {
+	id := task.ID(mux.Vars(r)["id"])
+	err := m.Delete(id)
+	err = json.NewEncoder(w).Encode(Response{
+		ID:    id,
+		Error: ResponseError{err},
+	})
+	if err != nil {
+		log.Println(err)
+		return
+	}
 }

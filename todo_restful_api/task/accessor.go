@@ -1,11 +1,5 @@
 package task
 
-import (
-	"errors"
-)
-
-var ErrTaskNotExist = errors.New("task does not exist")
-
 type ID string
 
 type Accessor interface {

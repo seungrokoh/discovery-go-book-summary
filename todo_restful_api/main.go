@@ -6,7 +6,6 @@ import (
 	"net/http"
 )
 
-
 const (
 	apiPathPrefix  = "/api/v1/task/"
 	htmlPathPrefix = "/task/"
@@ -17,7 +16,8 @@ func main() {
 	r := mux.NewRouter()
 	r.PathPrefix(htmlPathPrefix).
 		Path(idPattern).
-		Methods("GET").HandlerFunc(htmlHandler)
+		Methods("GET").
+		HandlerFunc(htmlHandler)
 
 	s := r.PathPrefix(apiPathPrefix).Subrouter()
 	s.HandleFunc(idPattern, apiGetHandler).Methods("GET")

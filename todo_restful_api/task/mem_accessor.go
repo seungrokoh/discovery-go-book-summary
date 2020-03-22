@@ -1,8 +1,11 @@
 package task
 
 import (
+	"errors"
 	"fmt"
 )
+
+var ErrTaskNotExist = errors.New("task does not exist")
 
 type InMemoryAccessor struct {
 	tasks  map[ID]Task
