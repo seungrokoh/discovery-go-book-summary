@@ -47,3 +47,17 @@ type Response struct {
 	Task  task.Task     `json:"task"`
 	Error ResponseError `json:"error"`
 }
+
+type ResponseList []Response
+
+func (r ResponseList) Len() int {
+	return len(r)
+}
+
+func (r ResponseList) Less(i, j int) bool {
+	return string(r[i].ID) < string(r[j].ID)
+}
+
+func (r ResponseList) Swap(i, j int) {
+	r[i], r[j] = r[j], r[i]
+}

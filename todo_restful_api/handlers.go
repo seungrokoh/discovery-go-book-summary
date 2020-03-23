@@ -7,7 +7,7 @@ import (
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
-	"strconv"
+	"sort"
 	"text/template"
 	"todo/task"
 )
@@ -15,6 +15,20 @@ import (
 var m = task.NewInMemoryAccessor()
 
 var tmpl = template.Must(template.ParseGlob("html/*.html"))
+
+func getResponseList(f func() (map[task.ID]task.Task, error)) (ResponseList, error) {
+	tasks, err := f()
+	if err != nil {
+		log.Println(err)
+		return ResponseList{}, err
+	}
+	var responseList ResponseList
+	for key, value := range tasks {
+		responseList = append(responseList, createResponse(key, value, err))
+	}
+	sort.Sort(responseList)
+	return responseList, nil
+}
 
 func htmlHandler(w http.ResponseWriter, r *http.Request) {
 	getID := func() (task.ID, error) {
@@ -26,19 +40,14 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	id, err := getID()
 	if err != nil {
-		tasks, err := m.GetAll()
-		if len(tasks) <= 0 {
-			// tasks가 한 개도 없을 경우
+		// id를 url에 넣지 않았을 경우
+		responseList, err := getResponseList(m.GetAll)
+		if err != nil {
 			log.Println(err)
 			return
 		}
-
-		for i := 1; i <= len(tasks); i++ {
-			err = tmpl.ExecuteTemplate(w, "task.html", &Response{
-				ID:    task.ID(strconv.Itoa(i)),
-				Task:  tasks[i-1],
-				Error: ResponseError{err},
-			})
+		for _, r := range responseList {
+			err = tmpl.ExecuteTemplate(w, "task.html", r)
 			if err != nil {
 				log.Println(err)
 				return
@@ -46,15 +55,15 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		t, err := m.Get(id)
-		if err != nil {
-			log.Println(err)
-			return
-		}
 		err = tmpl.ExecuteTemplate(w, "task.html", &Response{
 			ID:    id,
 			Task:  t,
 			Error: ResponseError{err},
 		})
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 }
 
@@ -63,6 +72,7 @@ func getTasks(r *http.Request) ([]task.Task, error) {
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
+	// parameter로 넘어온 task를 가져온다.
 	encodedTasks, ok := r.PostForm["task"]
 	if !ok {
 		return nil, errors.New("task parameter expected")
@@ -77,34 +87,28 @@ func getTasks(r *http.Request) ([]task.Task, error) {
 	return result, nil
 }
 
-func apiGetHandler(w http.ResponseWriter, r *http.Request) {
-	id := task.ID(mux.Vars(r)["id"])
-	t, err := m.Get(id)
-	err = json.NewEncoder(w).Encode(Response{
+func createResponse(id task.ID, t task.Task, err error) Response {
+	return Response{
 		ID:    id,
 		Task:  t,
 		Error: ResponseError{err},
-	})
+	}
+}
+
+func apiGetHandler(w http.ResponseWriter, r *http.Request) {
+	id := task.ID(mux.Vars(r)["id"])
+	t, err := m.Get(id)
+	err = json.NewEncoder(w).Encode(createResponse(id, t, err))
 	if err != nil {
 		log.Println(err)
 	}
 }
 
 func apiAllTasksHandler(w http.ResponseWriter, r *http.Request) {
-	tasks, err := m.GetAll()
+	responseList, err := getResponseList(m.GetAll)
 
-	var responses []Response
-
-	for i := 1; i <= len(tasks); i++ {
-		responses = append(responses, Response{
-			ID:    task.ID(strconv.Itoa(i)),
-			Task:  tasks[i-1],
-			Error: ResponseError{err},
-		})
-	}
-
-	err = json.NewEncoder(w).Encode(responses)
-	fmt.Println(responses)
+	err = json.NewEncoder(w).Encode(responseList)
+	fmt.Println(responseList)
 	if err != nil {
 		log.Println(err)
 	}
@@ -119,11 +123,8 @@ func apiPutHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, t := range tasks {
 		err = m.Put(id, t)
-		err = json.NewEncoder(w).Encode(Response{
-			ID:    id,
-			Task:  t,
-			Error: ResponseError{err},
-		})
+		err = json.NewEncoder(w).Encode(createResponse(id, t, err))
+
 		if err != nil {
 			log.Println(err)
 			return
@@ -139,11 +140,7 @@ func apiPostHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, t := range tasks {
 		id, err := m.Post(t)
-		err = json.NewEncoder(w).Encode(Response{
-			ID:    id,
-			Task:  t,
-			Error: ResponseError{err},
-		})
+		err = json.NewEncoder(w).Encode(createResponse(id, t, err))
 		if err != nil {
 			log.Println(err)
 			return
@@ -154,10 +151,7 @@ func apiPostHandler(w http.ResponseWriter, r *http.Request) {
 func apiDeleteHandler(w http.ResponseWriter, r *http.Request) {
 	id := task.ID(mux.Vars(r)["id"])
 	err := m.Delete(id)
-	err = json.NewEncoder(w).Encode(Response{
-		ID:    id,
-		Error: ResponseError{err},
-	})
+	err = json.NewEncoder(w).Encode(createResponse(id, task.Task{}, err))
 	if err != nil {
 		log.Println(err)
 		return

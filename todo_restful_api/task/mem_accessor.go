@@ -27,23 +27,28 @@ func (m *InMemoryAccessor) Get(id ID) (Task, error) {
 	return t, nil
 }
 
-func (m *InMemoryAccessor) GetAll() ([]Task, error) {
+func (m InMemoryAccessor) GetAll() (map[ID]Task, error) {
 	if len(m.tasks) <= 0 {
-		return []Task{}, ErrTaskNotExist
+		return map[ID]Task{}, ErrTaskNotExist
 	}
-	var result []Task
-	for id := range m.tasks {
-		task, _ := m.Get(id)
-		result = append(result, task)
+	var temp = make(map[ID]Task, len(m.tasks))
+	for key, value := range m.tasks {
+		temp[key] = value
 	}
-	return result, nil
+	return temp, nil
 }
 
 func (m *InMemoryAccessor) Put(id ID, t Task) error {
 	if _, exists := m.tasks[id]; !exists {
 		return ErrTaskNotExist
 	}
-	m.tasks[id] = t
+	temp := m.tasks[id]
+
+	if title := t.Title; title != "" {
+		temp.Title = title
+	}
+	temp.Status = t.Status
+	m.tasks[id] = temp
 	return nil
 }
 

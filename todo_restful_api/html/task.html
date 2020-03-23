@@ -14,11 +14,15 @@
         xhr.open("GET", "/api/v1/task/" + id, false);
         xhr.send();
         var resp = JSON.parse(xhr.responseText);
+        // 기존 task를 가져오고
         var task = resp.task;
+        // 가져온 status를 변경하
         task.status = status;
         xhr.open("PUT", "/api/v1/task/" + id, false);
         xhr.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+        // status가 변경된 task를 다시 보내준다.
         xhr.send("task="+encodeURIComponent(JSON.stringify(task)));
+        // 화면 refresh
         location.reload();
     }
 </script>
