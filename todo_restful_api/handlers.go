@@ -42,6 +42,11 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 		// id를 url에 넣지 않았을 경우
 		responseList, err := getResponseList(m.GetAll)
 		if err != nil {
+			err = tmpl.ExecuteTemplate(w, "task.html", &Response{
+				ID:    "",
+				Task:  task.Task{},
+				Error: ResponseError{err},
+			})
 			log.Println(err)
 			return
 		}
@@ -106,7 +111,10 @@ func apiGetHandler(w http.ResponseWriter, r *http.Request) {
 
 func apiAllTasksHandler(w http.ResponseWriter, r *http.Request) {
 	responseList, err := getResponseList(m.GetAll)
-
+	if err != nil {
+		err = json.NewEncoder(w).Encode(err)
+		return
+	}
 	err = json.NewEncoder(w).Encode(responseList)
 	fmt.Println(responseList)
 	if err != nil {
