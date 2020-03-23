@@ -72,6 +72,7 @@ func (d *Deadline) UnmarshalJSON(data []byte) error {
 }
 
 type Task struct {
+	ID       ID        `json:"id,omitempty"`
 	Title    string    `json:"title,omitempty"`
 	Status   status    `json:"status,omitempty"`
 	Deadline *Deadline `json:"deadline,omitempty"`
@@ -85,6 +86,20 @@ func (t Task) String() string {
 		check = " "
 	}
 	return fmt.Sprintf("[%s] %s %s", check, t.Title, t.Deadline)
+}
+
+type List []Task
+
+func (t List) Len() int {
+	return len(t)
+}
+
+func (t List) Less(i, j int) bool {
+	return t[i].ID < t[j].ID
+}
+
+func (t List) Swap(i, j int) {
+	t[i], t[j] = t[j], t[i]
 }
 
 type IncludeSubTasks Task

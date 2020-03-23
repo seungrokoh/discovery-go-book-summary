@@ -3,6 +3,7 @@ package task
 import (
 	"errors"
 	"fmt"
+	"sort"
 )
 
 var ErrTaskNotExist = errors.New("task does not exist")
@@ -27,14 +28,16 @@ func (m *InMemoryAccessor) Get(id ID) (Task, error) {
 	return t, nil
 }
 
-func (m InMemoryAccessor) GetAll() (map[ID]Task, error) {
+func (m InMemoryAccessor) GetAll() (List, error) {
 	if len(m.tasks) <= 0 {
-		return map[ID]Task{}, ErrTaskNotExist
+		return List{}, ErrTaskNotExist
 	}
-	var temp = make(map[ID]Task, len(m.tasks))
-	for key, value := range m.tasks {
-		temp[key] = value
+
+	var temp List
+	for _, t := range m.tasks {
+		temp = append(temp, t)
 	}
+	sort.Sort(temp)
 	return temp, nil
 }
 
@@ -52,10 +55,11 @@ func (m *InMemoryAccessor) Put(id ID, t Task) error {
 	return nil
 }
 
-func (m *InMemoryAccessor) Post(t Task) (ID, error) {
+func (m *InMemoryAccessor) Post(t *Task) (ID, error) {
 	id := ID(fmt.Sprint(m.nextID))
+	t.ID = id
+	m.tasks[id] = *t
 	m.nextID++
-	m.tasks[id] = t
 	return id, nil
 }
 

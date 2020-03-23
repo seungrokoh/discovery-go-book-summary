@@ -7,7 +7,6 @@ import (
 	"github.com/gorilla/mux"
 	"log"
 	"net/http"
-	"sort"
 	"text/template"
 	"todo/task"
 )
@@ -16,17 +15,17 @@ var m = task.NewInMemoryAccessor()
 
 var tmpl = template.Must(template.ParseGlob("html/*.html"))
 
-func getResponseList(f func() (map[task.ID]task.Task, error)) (ResponseList, error) {
+func getResponseList(f func() (task.List, error)) ([]Response, error) {
 	tasks, err := f()
 	if err != nil {
 		log.Println(err)
-		return ResponseList{}, err
+		return []Response{}, err
 	}
-	var responseList ResponseList
-	for key, value := range tasks {
-		responseList = append(responseList, createResponse(key, value, err))
+
+	var responseList []Response
+	for _, t := range tasks {
+		responseList = append(responseList, createResponse(t.ID, t, err))
 	}
-	sort.Sort(responseList)
 	return responseList, nil
 }
 
@@ -67,8 +66,8 @@ func htmlHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func getTasks(r *http.Request) ([]task.Task, error) {
-	var result []task.Task
+func getTasks(r *http.Request) (task.List, error) {
+	var result task.List
 	if err := r.ParseForm(); err != nil {
 		return nil, err
 	}
@@ -84,6 +83,7 @@ func getTasks(r *http.Request) ([]task.Task, error) {
 		}
 		result = append(result, t)
 	}
+	log.Println(result)
 	return result, nil
 }
 
@@ -138,8 +138,10 @@ func apiPostHandler(w http.ResponseWriter, r *http.Request) {
 		log.Println(err)
 		return
 	}
+	log.Println(len(tasks))
+
 	for _, t := range tasks {
-		id, err := m.Post(t)
+		id, err := m.Post(&t)
 		err = json.NewEncoder(w).Encode(createResponse(id, t, err))
 		if err != nil {
 			log.Println(err)
