@@ -53,3 +53,27 @@ func TestFanIn(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+func TestFanIn3(t *testing.T) {
+	c1, c2, c3 := make(chan int), make(chan int), make(chan int)
+	sendInts := func(c chan<- int, begin, end int) {
+		defer close(c)
+		for i := begin; i < end; i++ {
+			c <- i
+		}
+	}
+	var got []int
+	want := []int{11, 12, 13, 21, 22, 31, 32, 33, 34}
+
+	go sendInts(c1, 11, 14)
+	go sendInts(c2, 21, 23)
+	go sendInts(c3, 31, 35)
+	for n := range FanIn3(c1, c2, c3) {
+		got = append(got, n)
+	}
+
+	sort.Ints(got)
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
