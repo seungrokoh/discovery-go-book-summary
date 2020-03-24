@@ -77,3 +77,33 @@ func TestFanIn3(t *testing.T) {
 		t.Errorf("got %v, want %v", got, want)
 	}
 }
+
+func PlusOneWithDone(done <-chan struct{}, in <-chan int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for num := range in {
+			select {
+			case out <- num + 1:
+			case <-done:
+				return
+			}
+		}
+	}()
+	return out
+}
+
+func PlusOneWithContext(ctx context.Context, in <- chan int) <- chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for num := range in {
+			select {
+			case out <- num + 1:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
+}
