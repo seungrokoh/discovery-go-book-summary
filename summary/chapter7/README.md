@@ -1,0 +1,741 @@
+# 7장 동시성
+
+## 7.1 고루틴
+
+* 고루틴은 가벼운 스레드와 같은 것으로 **현재 수행 흐름과 별개의 흐름을 만들어준다.**
+* 함수 앞에 `go` 키워드를 붙여 고루틴을 실행할 수 있다.
+* go 키워드가 붙은 함수는 메모리를 공유하는 논리적으로 별개의 흐름이 된다.
+
+
+
+### 7.1.1 병렬성과 병행성
+
+* 병렬성은 정말 동시에 각각의 흐름이 수행되는 경우를 뜻한다.
+* 병행성은 실제로는 동시에 흐르는 것이 아닌 동시에 실행되는 것처럼 보이는 것이다.
+
+
+
+go 키워드가 붙은 함수 호출은 별개의 흐름으로 동작한다. 만약 여러개의 goroutine 함수가 있다면 concurrency로 동작하게된다.
+
+
+
+```go
+func main() {
+    go func() {
+        fmt.Println("In goroutine")
+    }()
+    fmt.Println("In main routine")
+}
+```
+
+* 메인 함수가 끝나버리면 goroutine이 모두 수행되지 않을 수도 있다.
+* 위 코드는 goroutine이 항상 실행되지 않는 코드이다.
+* main 함수가 끝날 때 goroutine이 준비가 되지 않아 출력을 하지 못할 수 있기 때문이다.
+
+
+
+### 7.1.2 고루틴 기다리기
+
+* 고루틴을 제어하기 위하여 sync library를 제공한다.
+* sync.WaitGroup을 이용해 선행작업이 있을 때 goroutine들을 제어할 수 있다.
+
+p.240 ~ p.242 의 사진 파일을 다운로드하고 zipping하는 코드를 살펴보면 이해할 수 있다. 해당 코드는 제대로 동작하지 않는데 이유는 다음과 같다.
+
+* download 함수는 goroutine으로 동작하는데 이 함수가 언제 끝날지 알 수 없다.
+* zipping을 하기 위해선 다운로드 된 사진이 필요하지만 goroutine은 별개로 동작하기 때문에 zipping하는 시점에 다운로드된 사진이 없을 수 있다.
+* goroutine으로 동작 할 경우 여러 흐름으로 나눠서 하기 때문에 빠를 수 있지만 선행작업이 있을 경우 따로 제어를 해줘야한다.
+
+위 예제는 두 작업이 연관되어 있다. 선행작업 (파일 다운로드) 이후 zipping을 해야하는 경우다. 이때 sync.WaitGroup을 이용해 만들어진 고루틴들이 모두 작업을 마칠 때까지 기다릴 수 있다. 
+
+```go
+var wg sync.WaitGroup
+// 생성될 고루틴의 갯수만큼 add
+wg.Add(len(urls))
+for _, url := range urls {
+    go func(ulr string) {
+        // 고루틴이 종료될 때 Done을 호출
+        defer wg.Done()
+        if _, err := download(url); err != nli {
+            log.Fatal(err)
+        }
+    }(url)
+}
+// 고루틴이 모두 끝날 때까지 기다림
+wg.Wait()
+```
+
+* wg 에는 기본값이 0으로 맞춰져 있는 카운터가 들어 있다.
+* Wait() 함수는 카운터가 0일 될 때까지 기다린다.
+* Add() 함수는 호출될 때 넘긴 인자 만큼 카운터를 증가시킨다.
+* Done() 함수는 Add(-1)과 동일하며 동작을 마쳤다는 의미로 표현한다.
+* 즉 동작할 고루틴들의 갯수를 지정해놓고 각 고루틴들이 종료될 때 Done을 호출함으로써 모든 고루틴들이 끝났음을 확인할 수 있다.
+
+```go
+var wg sync.WaitGroup
+for _, url := range urls {
+    wg.Add(1)
+    go func(url string) {
+        defer wg.Done()
+        if _, err := download(url); err != nil {
+            log.Fatal(err)
+        }
+    }(url)
+}
+wg.Wait()
+```
+
+* 처음부터 생성 될 고루틴의 개수를 알지 못할 때 고루틴을 생성할 때 Add() 함수를 호출해 해결할 수 있다.
+* 주의 할 점은 Add() 함수를 고루틴 내부에 포함시키면 안된다. 그 이유는 제대로 동작할 수도 있지만 고루틴 안에 선언해 놓을 경우 Add()하기 전에 wg.Wait()을 통과 할 가능성이 있기 때문이다. (race condition) 
+
+
+
+### 공유 메모리와 병렬 최소값 찾기
+
+* 고루틴들은 메모리도 서로 공유한다. 
+* 변수의 포인터를 받아서 해당 변수에 원하는 값을 넣어줄 수 있다.
+
+아래 예제는 배열에서 최소값을 찾는 문제이다. 먼저 배열에서 최소값을 찾는 함수를 만들고 배열 전체를 n개로 나눠 n개의 goroutine으로 최소값을 찾는 문제이다. 
+
+
+
+```go
+// 배열에서 최소값을 찾는 함수
+func Min(a []int) int {
+	if len(a) == 0 {
+		return 0
+	}
+	min := a[0]
+	for _, e := range a[1:] {
+		if min > e {
+			min = e
+		}
+	}
+	return min
+}
+
+// 배열을 n조각으로 나눠 각 고루틴에서 최소값을 찾는 함수
+// 최소값을 찾을 배열과 몇 개의 goroutine으로 나눌지 인자로 넘겨준다.
+func ParallelMin(a []int, n int) int {
+	if len(a) < n {
+		return Min(a)
+	}
+    // 각 고루틴에서 찾은 최소값들을 저장할 mins 배열
+	mins := make([]int, n)
+	bucketSize := (len(a) + n - 1) / n
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+        // 고루틴 생성
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			begin, end := i*bucketSize, (i+1)*bucketSize
+			if end > len(a) {
+				end = len(a)
+			}
+            // 고루틴에서 최소값을 찾고 배열에 저장
+			mins[i] = Min(a[begin:end])
+		}(i)
+	}
+    // 모든 고루틴에서 최소값을 찾을 때까지 대기
+	wg.Wait()
+    // 각 고루틴에서 찾은 최소값들 중 최소값을 최종 반환
+	return Min(mins)
+}
+```
+
+* 실제 1억개의 임의의 데이터를 만들고 최소값을 찾는데 걸리는 시간을 측정해 볼 수 있다.
+
+```go
+func main() {
+	var nums []int
+
+	// 1억개의 임의 값들을 생성
+	for i := 0; i < 100000000; i++ {
+		nums = append(nums, rand.Int())
+	}
+	start := time.Now()
+	fmt.Println("linear Min 최소 값 : ", Min(nums))
+	fmt.Println("linear Min 수행 시간 : ", time.Since(start))
+	start = time.Now()
+	fmt.Println("parallel Min 최소 값 : ", ParallelMin(nums, 100))
+	fmt.Println("parallel Min 수행 시간 : ", time.Since(start))
+}
+```
+
+* 각 수행 시간은 실행 환경마다 다르며 ParallelMin이 더 빠른 수행결과를 보인다는 것을 볼 수 있다.
+* 위 예제는 100개의 고루틴들이 1억개의 데이터를 100등분 하여 각각 계산하는 예제이다.
+
+
+
+## 7.2 채널
+
+* 서로 다른 고루틴끼리 통신할 수 있는 수단이다.
+* 채널은 넣은 데이터를 뽑아낼 수 있는 마치 파이프와 같은 형태의 자료구조이다.
+* 채널은 일급시민이다.
+* 양방향 채널과 단반향 채널이 있으며 양방향은 단방향으로 변환할 수 있다.
+* 맵처럼 생성해서 사용하며 채널끼리 서로 복사한 경우 동일한 채널을 가리킨다. (포인터와 비슷한 레퍼런스형)
+
+```go
+c1 := make(chan int)
+var c2 chan int = c1
+var c3 <-chan int = c1
+var c4 chan<- int = c1
+```
+
+* c1과 c2는 동일한 채널을 보고 있으며 c3는 (receive only), c4는 (send only) 채널이 된다.
+* receive only, send only는 화살표의 위치에 따라 정해진다. (<-chan or chan<-)
+
+```go
+// 채널에 자료 보내기
+c <- 100
+
+// 채널에서 받은 자료 버리기
+<-c
+
+// 채널에서 자료 받기
+data := <-c
+```
+
+
+
+### 7.2.1 일대일 단방향 채널 소통
+
+* 채널 이용의 가장 단순한 형태로 고루틴 하나에서는 보내고 다른 고루틴에서 받는 형태이다.
+
+```go
+func main() {
+	c := make(chan int)
+	go func() {
+		c <- 1
+		c <- 2
+		c <- 3
+	}()
+	fmt.Println(<-c)
+	fmt.Println(<-c)
+	fmt.Println(<-c)
+}
+
+// Output:
+// 1
+// 2
+// 3
+```
+
+* go func()로 호출된 고루틴 내에서 1,2,3 데이터를 보내고, 밖에서는 데이터를 받는다.
+* 메인 함수도 고루틴으로 동작하기 때문에 두 고루틴 사이에서 서로 데이터를 주고 받는 모습이다.
+* 보내는 고루틴과 받는 고루틴이 주고 받는 데이터의 개수가 다르면 고루틴은 멈추게 된다.
+
+```go
+func main() {
+	c := make(chan int)
+	go func() {
+		c <- 1
+		c <- 2
+	}()
+	fmt.Println(<-c)
+	fmt.Println(<-c)
+	fmt.Println(<-c)
+}
+```
+
+* 위 코드는 보내는 개수가 받는 개수보다 적을 때 나타나는 오류를 알려준다
+* 세 번째 fmt.Println(<-c) 부분에서 채널에서 데이터가 오기만을 기다리다 deadlock이 발생해 프로그램이 죽는다.
+
+```go
+func main() {
+	c := make(chan int)
+	go func() {
+		c <- 1
+		c <- 2
+		c <- 3
+	}()
+	fmt.Println(<-c)
+	fmt.Println(<-c)
+}
+// Output:
+// 1
+// 2
+```
+
+* 위 코드는 받는 개수가 보내는 개수보다 적을 때 나타나는 현상이다.
+* 2개의 코드만 받았으므로 출력이 되고 main 함수가 종료되어 이상이 없어 보이지만 문제가 있다.
+* go func()로 생성된 고루틴은 c <- 3 에서 멈추게 된다. 
+* 하지만 main 함수는 이미 종료가 됐고 만들어진 고루틴은 허공에 뜨게 된다. 이게 반복되면 memory leak이 발생한다.
+* 자세히 알아보기 위해 runtime.NumGoroutine() 을 이용해 현재 생성된 고루틴의 수를 세어보면 된다.
+
+```go
+func main() {
+	c := make(chan int)
+	go func() {
+		c <- 1
+		c <- 2
+		c <- 3
+	}()
+	fmt.Println(<-c)
+	fmt.Println(<-c)
+	fmt.Println("num of goroutine : ", runtime.NumGoroutine())
+}
+// Output:
+// 1
+// 2
+// num of goroutine : 2
+```
+
+* 메인과 생성된 고루틴 2개가 남아있게 된다.
+* 보내고 받는 데이터의 개수를 서로 알지 못해도 동작하도록 구현할 수 있다.
+
+```go
+func main() {
+	c := make(chan int)
+	go func() {
+		c <- 1
+		c <- 2
+		c <- 3
+		close(c)
+	}()
+	for num := range c {
+		fmt.Println(num)
+	}
+}
+// Output:
+// 1
+// 2
+// 3
+```
+
+* close(c)를 이용해 채널을 닫을 수 있다.
+* range 를 이용해 채널에서 값을 받아올 수 있다.
+* range로 채널을 받아오는건 채널이 오픈되어 있을 때 받아온다. 즉, 채널이 닫히면 for문도 벗어나게 된다.
+
+
+
+### :star::star::star::star::star:
+
+#### 너무나 중요한 사용 패턴
+
+별 5개인 이유는 이 코드를 이해 하면 다른 코드들도 이해하기 쉽기 때문이다. 그 말은 이 코드 패턴을 많은 곳에서 사용한다는 의미이다. 
+
+* 채널 하나를 만들어서 넘겨주고 받는 것은 깔끔해 보이지 않는다.
+* 따라서 함수가 채널을 반환하게 하는 패턴을 사용한다.
+* 채널을 닫을 땐 defer close(c)를 이용하자.
+* 보내는 쪽에서 단반향 채널을 반환하여 이 채널을 이용하는 고루틴이 받아가기만 할 수 있게 구현한다.
+
+
+
+:star::star::star::star::star:
+
+```go
+func main() {
+	c := func() <-chan int {
+		out := make(chan int)
+		go func() {
+			defer close(out)
+			out <- 1
+			out <- 2
+			out <- 3
+		}()
+		return out
+	}()
+	for num := range c {
+		fmt.Println(num)
+	}
+}
+```
+
+이 패턴은 반드시 외워두도록 하자. 패턴을 만드는 방법은 다음과 같다.
+
+* 안에서 채널(이용하는 고루틴이 받아가는)을 생성 (out)
+* out 채널을 사용하는 고루틴 생성
+* 고루틴 안에서 채널에 데이터 넣기
+* 생성한 채널을 반환
+
+자세히 보면 클로져(closure) 형태로 구성되어 있다. 클로져를 모른다면 [4장 함수](https://github.com/seungrokoh/discovery-go-book-summary/tree/master/summary/chapter4)를 다시 읽어보고 이해 해야한다.
+
+
+
+### 7.2.2 생성기 패턴
+
+* 채널을 이용하여 생성기를 만들 수 있다.
+
+```go
+func Fibonacci(max int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		a, b := 0, 1
+		for a <= max {
+			out <- a
+			a, b = b, a + b
+		}
+	}()
+	return out
+}
+```
+
+클로저를 이용해 만들 수 있지만 **채널을 이용하는 방법에는 몇 가지 장점이 있다.**
+
+* 생성하는 쪽에서 상태 저장 방법을 복잡하게 고민할 필요가 없다.
+* 받는 쪽에서 for range를 사용할 수 있다.
+* 채널 버퍼를 이용하면 멀티 코어를 활용하거나 입출력 성능상의 장점을 이용할 수 있다.
+
+클로져를 이용한 코드와 비교는 책 또는 [여기](https://github.com/seungrokoh/discovery-go-book-summary/tree/master/summary/chapter7/examples/fibonacci/fibonacci.go)서 확인할 수 있다.
+
+
+
+### 7.2.3 버퍼 있는 채널
+
+```go
+c := make(chan int, 10)
+```
+
+* 받는 쪽이 준비가 되어 있지 않아도 보내는 쪽에서 미리 보낼 수 있다.
+* 버퍼가 가득차기 전까지는 받는 쪽에서 준비가 되어 있지 않아도 보낼 수 있다.
+* 보내는 쪽과 받는 쪽의 어느 정도 격차가 생겨도 계속 동작할 수 있기 때문에 성능 향상이 일어날 수 있다.
+* 하지만 동시성은 강력하지만 복잡할 수 있으므로 알려진 패턴을 따르는게 더 좋다.
+* **버퍼 없는 채널로 동작하는 코드를 만들고 필요에 따라 성능 향상을 위해 버퍼를 조절해주는게 좋다.**
+
+
+
+### 7.2.4 닫힌 채널
+
+* 채널이 닫히면 for range를 이용할 때 반복이 종료된다.
+* 채널에서 값을 받아올 때 2개의 변수로 받아올 수 있는데 첫 번째는 값, 두 번째는 채널의 open 여부(bool)이다.
+* 첫 번째 값은 오픈 여부에 상관 없이 값이 들어온다. 열려있으면 받은 값, 닫혀있으면 기본값이 들어온다.
+* 두 번째 값은 열려 있으면 true, 닫혀 있으면 false가 들어온다.
+* 채널이 닫혀 있으면 채널에 값이 보내질 리 없으므로 전혀 기다리지 않고 무작정 기본값을 받아올 수 있는 채널이 된다.
+
+```go
+func Example_closedChannel() {
+    c := make(chan int)
+    close(c)
+    fmt.Println(c)
+    fmt.Println(c)
+    fmt.Println(c)
+    // Output:
+    // 0
+    // 0
+    // 0
+}
+```
+
+* 닫혀있는 채널을 또 닫으려고 시도하면 패닉(panic)이 발생한다.
+
+
+
+### :star::star::star::star::star:
+
+## 7.3 동시성 패턴
+
+이 파트에서 나오는 패턴들은 되도록 외워두는 것이 좋다. 위에서 설명한 **너무나 중요한 패턴**을 익히고 있다면 이해하기 수월하다.
+
+
+
+### 7.3.1 파이프라인 패턴
+
+* 파이프라인 패턴은 한 단계의 출력이 다음 단계의 입력으로 이어지는 구조이다.
+* 분업구조로 컨베이어 벨트를 생각하면 쉽다. (상세 예시는 책에 나와있다.)
+* 들어오는 데이터와 나가는 데이터에 집중하여 문제를 해결할 때 좋다.
+* 파이프라인 패턴은 생성기 패턴의 일종이다.
+* 받기 전용 채널을 입력으로 활용한다는 점이 생성기 패턴과의 차이이다.
+* 반환된 받기 전용 채널을 다른 파이프라인의 입력으로 넘겨줄 수 있기 때문에 매우 자연스럽게 출력을 입력으로 연결하여 일직선으로 사슬처럼 연결된 파이프라인을 구성할 수 있다.
+
+```go
+// 채널로 들어온 값들에 1을 더해주는 함수
+func PlusOne(in <-chan int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+        for num := range in {
+            out <- num + 1
+        }
+	}()
+	return out
+}
+```
+
+* Input 채널에서 받은 값들에 1을 더해 out 채널에 넣고 이를 반환하는 함수이다.
+* 입력과 출력 모두 채널을 받고 반환하기 때문에 다음과 같이 사용할 수 있다.
+
+```go
+func main() {
+    c := make(chan int)
+    go func {
+        defer close(c)
+        c <- 5
+        c <- 3
+        c <- 8
+    }()
+    
+    for num := range PlusOne(PlusOne(c)) {
+        fmt.Println(num)
+    }
+}
+// Output:
+// 7
+// 5
+// 10
+```
+
+* 안쪽 PlusOne 함수를 거져 1 증가된 수가 저장된 채널을 다시 두 번째 PlusOne 함수에서 입력으로 사용하는 구조이다.
+* 형태만 같다면 서로 다른 함수들도 이렇게 이어 붙일 수 있다.
+* 1을 더하고, 제곱을 한 뒤, 2를 곱해주는 함수를 파이프 라인으로 구현할 수 있다.
+
+```go
+// 채널로 들어온 값에 1을 더해주는 함수
+func PlusOne(in <-chan int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for num := range in {
+			out <- num + 1
+		}
+	}()
+	return out
+}
+
+// 채널로 들어온 값을 제곱하는 함수
+func Square(in <-chan int) <- chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for num := range in {
+			out <- num * num
+		}
+	}()
+	return out
+}
+
+// 채널로 들어온 값에 2를 곱해주는 함수
+func MultiplyDouble(in <-chan int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for num := range in {
+			out <- num * 2
+		}
+	}()
+	return out
+}
+
+// 메인 함수
+func main() {
+	c := make(chan int)
+	go func() {
+		defer close(c)
+		c <- 1
+		c <- 2
+		c <- 3
+	}()
+
+	for num := range MultiplyDouble(Square(PlusOne(c))) {
+		fmt.Println(num)
+	}
+}
+// Output:
+// 4
+// 18
+// 32
+```
+
+* 같은 함수 뿐만 아니라 형태만 같다면 서로 다른 함수들도 이어 붙일 수 있다.
+
+```go
+type IntPipe func(<-chan int) <-chan int
+```
+
+* 생성기 패턴과 마찬가지로 무조건 **데이터를 보내는 쪽에서 채널을 닫아야 한다.**
+* 사슬처럼 이어진 파이프라인을 하나로 보이게 만들어야 할 때 다음과 같은 패턴을 이용한다.
+
+```go
+func Chain(ps ...IntPipe) IntPipe {
+    return func(in <-chan int) <-chan int {
+        c := in
+        for _, p := range ps {
+            c = p(c)
+        }
+        return c
+    }
+}
+```
+
+* Chain(A, B)(c)는 B(A(c))와 같다.
+
+* for문으로 파이프라인 함수들(ps)를 순차적으로 실행시킨다.
+* 각 함수 p를 이용해 c를 입력으로 사용해 반환된 채널을 다시 c에 입력시킨다.
+* 이를 반복적으로 반환되어 나온 c를 다음 파이프라인 함수 p(c)에 입력으로 넣는다.
+* 바로 이용하지 않고 다른 곳에 넘겨야 하는 경우에 Chain 고계 함수를 이용하면 편리하다.
+
+
+
+### 7.3.2 채널 공유로 팬아웃하기
+
+* 한 곳에서의 출력을 여러곳에 나누어주어야 할 때 사용할 수 있다.
+* 채널 하나를 여러 고루틴에게 공유하면 된다.
+* 여러 고루틴이 한 채널에서 자료를 받아가려고 할 때, 하나의 고루틴에만 자료가 전달된다.
+* 보내는 쪽에서 모든 자료를 보내면 채널을 닫는다.
+* 채널이 닫히면 모든 해당 채널을 이용하는 모든 고루틴이 닫혔음을 인지한다. (broadcast)
+
+
+
+:heavy_check_mark: FanOut 예제
+
+```go
+func main() {
+    c := make(chan int)
+    defer close(c)
+    // 총 3개의 고루틴을 생성하고 채널에서 값을 받아 고루틴 번호와 값을 출력한다.
+    for i := 0; i < 3; i++ {
+        go func(i int) {
+            for n := range c {
+                // 한 고루틴이 독식하는 것을 막기위한 임시방편
+                time.Sleep(1)
+                fmt.Println(i, n)
+            }
+        }(i)
+    }
+    // 채널에 0 ~ 9 값을 넣는다.
+    for i := 0; i < 10; i++ {
+        c <- i
+    }
+}
+```
+
+* 채널을 닫아주지 않으면 프로그램이 종료되지 않는 경우에는 숫자들을 기다리는 3개의 고루틴들이 메모리에 남아있게 된다.
+* 메인 함수가 아닌 반복적으로 호출되는 함수 안에서 위와 같은 코드에 채널을 닫는 코드가 없다면 고루틴들은 계속해서 메모리에 쌓이게 되고 이는 memory leak으로 이어진다.
+* **채널을 닫는것은 신호를 모두에게 전달하기 위한 매우 강력하고 깔끔한 방법이다.**
+* for문 안에 있는 제어 변수를 사용할 때는 **고루틴에 넘겨서 복사 및 고정**시켜 사용해야한다.
+
+
+
+### 7.3.3 팬인하기
+
+
+
+
+
+### 7.3.5 select
+
+switch문과 비슷하지만 동시성 프로그래밍에서 사용되며 다음과 같은 특징이 있다.
+
+* select를 이용하면 **동시에 여러 채널과 통신할 수 있다.**
+* 모든 case가 계산된다. 거기에 함수 호출 등이 있으면 select를 수행할 때 모두 호출된다.
+* 각 case는 채널에 입출력하는 형태가 되며 막히지 않고 입출력이 가능한 case가 있으면 그중에 하나가 선택되어 입출력이 수행되고 해당 case의 코드만 수행된다.
+* default가 있으면 모든 case에 입출력이 불가능할 때 코드가 수행된다. default가 없고 모든 case에 입출력이 불가능하면 어느 하나라도 가능해질 때까지 기다린다.
+
+
+
+select는 모든 case를 한번에 검사한다. 또한 select는 입출력이 발생하지 않으면 무한정 대기하게 된다. 만약 10개의 채널에서 값이 들어오는 것을 기다리고 있다가 1개의 채널에서 입/출력이 발생하게 된다면 10개의 case를 모두 검사하고 들어온 채널의 body만 실행하게 된다.
+
+
+
+:bulb: 만약 입/출력을 기다리고 있는 select에서 **10개의 채널에서 입/출력이 동시에 발생하게 된다면??**
+
+select는 여러개가 발생했을 때 무작위로 1개의 입/출력만 처리하게 된다. 즉 9개는 입/출력을 처리하지 않는다. 따라서 select를 for문으로 감싸게 된다면 나머지 입출력에 대해서도 계속해서 처리하게 되는 것이다.
+
+
+
+### select로 팬인하기
+
+* select를 이용하면 고루틴을 여러 개 이용하지 않고도 팬인을 할 수 있다.
+
+```go
+select {
+case n := <-c1: c <- n
+case n := <-c2: c <- n
+case n := <-c3: c <- n
+}
+```
+
+* c1, c2, c3중 어느 채널이라도 자료가 준비되어 있으면 그것을 c로 보내는 코드
+* 셋 중 어떤 채널이 닫혀 있는 경우, 닫혀 있는 채널은 막히지 않고 기본값을 계속해서 받아갈 수 있기 때문에 닫힌 채널로부터 기본값이 받아질 가능성이 있다.
+
+```go
+func FanIn3(in1, in2, in3 <-chan int) <-chan int {
+	out := make(chan int)
+	openCnt := 3
+	closeChan := func(c *<-chan int) bool {
+		*c = nil
+		openCnt--
+		return openCnt == 0
+	}
+
+	go func() {
+		defer close(out)
+		for {
+			select {
+			case n, ok := <-in1:
+				if ok {
+					out <- n
+				} else if closeChan(&in1) {
+					return
+				}
+			case n, ok := <-in2:
+				if ok {
+					out <- n
+				} else if closeChan(&in2) {
+					return
+				}
+			case n, ok := <-in3:
+				if ok {
+					out <- n
+				} else if closeChan(&in3) {
+					return
+				}
+			}
+		}
+	}()
+	return out
+}
+```
+
+
+
+:bulb: 만약 입/출력을 기다리지 않고 스킵하려면?
+
+select에 default를 추가하게 되면 입/출력이 들어오지 않았을 때 스킵할 수 있게 된다. 
+
+```go
+select {
+case n := <-c:
+    fmt.Println(n)
+default:
+    fmt.Println("Data is not ready. Skipping...")
+}
+```
+
+
+
+### 시간제한
+
+* 채널과 통신을 기다리되 일정 시간 동안만 기다리겠다면 time.After 함수를 이용하면 된다.
+* time.After 함수는 채널을 반환한다.
+* 해당 채널로 값이 들어온다면 시간이 넘었다는 뜻이므로 return으로 함수 전체를 빠져나가게 구현하면 된다.
+
+```go
+select{
+case n := <- recv:
+    fmt.Println(n)
+case send <- 1:
+    fmt.Println("sent 1")
+case <-time.After(5 * time.Second):
+    fmt.Println("No send and receive communication for 5 seconds")
+    return
+}
+```
+
+* for 문으로 둘러싸여 있다면 매번 타이머가 새로 생성되므로 전체 시간 제한을 두고 싶다면 타이머 채널을 따로 보관하면 된다.
+
+```go
+timeout := time.After(5 * time.Second)
+select{
+case n := <- recv:
+    fmt.Println(n)
+case send <- 1:
+    fmt.Println("sent 1")
+case <-timeout:
+    fmt.Println("No send and receive communication for 5 seconds")
+    return
+}
+```
+
+* recv와 send에 빈번하게 자료가 반복적으로 오고 가더라도 5초 동안만 처리하게 된다.
