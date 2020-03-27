@@ -609,7 +609,70 @@ func main() {
 
 ### 7.3.3 팬인하기
 
+* 여러 곳에서 수행되던 작업들을 한 곳에 모아 처리하는 것을 FanIn이라 한다.
+* 채널을 닫는 것에 주의해야 한다. 보내는 고루틴이 여럿이므로 보내는 곳에서 채널을 닫으면 여러번 닫히기 때문에 패닉이 발생한다.
+* 따라서 채널을 닫기 위한 고루틴을 하나 만들고 해당 고루틴에서 모든 고루틴이 데이터를 보내는 것을 기다렸다 채널을 닫는다.
 
+```go
+func FanIn(ins ...<-chan int) <-chan int {
+    out := make(chan int)
+    var wg sync.WaitGroup
+    wg.Add(len(ins))
+    for _, in := range ins {
+        go func(in <-chan int) {
+            defer wg.Done()
+            for num := range in {
+                out <- num
+            }
+        }(in)
+    }
+    
+    go func() {
+        wg.Wait()
+        close(out)
+    }()
+    return out
+}
+```
+
+:bulb: 왜 채널을 닫기 위해 굳이 다른 고루틴을 사용할까?
+
+> 고루틴을 사용하지 않으면 FanIn 함수가 out채널을 반환할 때 함수 안의 리소스가 해제되므로, 클로져 형태로 고루틴을 만들어 FanIn 함수가 종료되더라도 리소스를 가져갈 수 있게 만든다.
+
+
+
+### 7.3.4 분산처리
+
+* 팬아웃해서 파이프라인을 통과시키고 다시 팬인시키면 분산처리가 된다.
+
+```go
+func Distribute(p IntPipe, n int) IntPipe {
+    // IntPipe형을 반환
+    return func(in <-chan int) <-chan int {
+        // n개로 분산 시킬 채널을 생성
+        cs := make([]<-chan int, n)
+        // n개로 나누어진 채널에 작업들을 할당해서 진행
+        for i := 0; i < n; i++ {
+            cs[i] = p(in)
+        }
+        // 여러개로 나뉘어진 작업들을 다시 FanIn을 이용해서 합침
+        return FanIn(cs...)
+    }
+}
+```
+
+* Chain과 함께 사용하면 다양한 파이프라인을 구성할 수 있다.
+
+```go
+out := Chain(Cut, Distribute(Chain(Draw, Paint, Decorate), 10), Box)(in)
+
+or 
+
+out := Chain(Cut, Distribute(Draw, 6), Distribute(Paint, 10), Distribute(Decorate, 3), Box)(in)
+```
+
+* Go에서는 고루틴마다 스레드를 모두 할당하지 않으므로 고루틴 개수가 많은 것은 크게 걱정할 필요가 없다.
+* 동시에 수행될 필요가 없는 고루틴들은 모두 하나의 스레드에서 순차적으로 수행된다.
 
 
 
@@ -739,3 +802,532 @@ case <-timeout:
 ```
 
 * recv와 send에 빈번하게 자료가 반복적으로 오고 가더라도 5초 동안만 처리하게 된다.
+
+
+
+### 7.3.6 파이프라인 중단하기
+
+* 파이프라인을 구성할 때 데이터를 끝까지 받지 않고 중간에 끊고 싶을 때도 있다.
+* 가장 간단한 방법은 특정 조건이 수행됐을 때 데이터를 받는 for range를 break 하고 남은 값들은 의미 없이 소진시키는 것이다.
+
+```go
+func main() {
+    c := make(chan int)
+    go func() {
+        defer close(c)
+        for i := 3; i < 103; i++ {
+            c <- i
+        }
+    }()
+    
+    nums := PlusOne(PlusOne(PlusOne(PlusOne(PlusOne(c)))))
+    for num := range nums {
+        fmt.Println(num)
+        if num == 18 {
+            break;
+        }
+    }
+    for _ = range nums {
+        // Consume all nums
+    }
+}
+```
+
+* 하지만 이런 방법은 별로 좋지 않은 방법이다.
+* 만약 해제되지 않은 고루틴이 존재한다면 memory leak이 발생할 수 있다.
+* 또한 많은 네트워크 트래픽을 유발하거나 배터리를 소모한다면 의미없이 데이터를 소모할 때 그만큼의 비용이 발생한다.
+
+:bulb: 그럼 중간에 데이터를 그만 받고 보내는 채널을 닫는 방법은?
+
+>  중간에 데이터를 그만받고 보내는 채널을 닫기 위해서 done채널(보내는 채널을 닫기 위한 채널)을 하나 더 둔다. 보내는 채널에서 done채널을 감시하고 있다가 데이터가 발생되면 보내는 채널을 종료시키는 방식이다. 신호는 close(done)으로 발생시킨다.
+
+```go
+func PlusOne(done <-chan struct{}, in <-chan int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for num := range in {
+			select {
+			case out <- num + 1:
+			case <-done:
+				return
+			}
+		}
+	}()
+	return out
+}
+
+func main() {
+    c := make(chan int)
+    go func() {
+        defer close(c)
+        for i := 3; i < 103; i += 10 {
+            c <- i
+        }
+    }()
+    done := make(chan struct{})
+    nums := PlusOne(done, PlusOne(done, PlusOne(done, PlusOne(done, PlusOne(done, c)))))
+    for num := range nums {
+        fmt.Println(num)
+        if num == 18 {
+            break
+        }
+    }
+    close(done)
+}
+```
+
+* select를 이용해 done채널을 관찰하고 있다 신호가 들어오면 고루틴을 빠져나가도록 만든다.
+* close(done) 한 번으로 이 채널로부터 값을 기다리고 있는 모든 고루틴에 일이 끝났다고 방송한다.
+
+
+
+### 7.3.7 컨텍스트(context.Context) 활용하기
+
+* 더 복잡한 상황이 발생하면 context 패턴을 사용하는 것이 좋다.
+* 종료 신호뿐만 아니라 다른 정보들도 공유되어야 할 때 사용된다.
+* 대표적으로 사용자의 인증정보나 요청 마감등이 있다.
+
+```go
+func PlusOne(ctx context.Context, in <-chan int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for num := range in {
+			select {
+			case out <- num + 1:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
+}
+
+func main() {
+    c := make(chan int)
+	go func() {
+		defer close(c)
+		for i := 3; i < 103; i += 10 {
+			c <- i
+		}
+	}()
+    // 취소 기능을 가진 Context를 최상위 Context인 Background에 붙인다.
+	ctx, cancel := context.WithCancel(context.Background())
+	nums := PlusOne(ctx, PlusOne(ctx, PlusOne(ctx, PlusOne(ctx, PlusOne(ctx, c)))))
+	for num := range nums {
+		fmt.Println(num)
+		if num == 18 {
+			cancel()
+			break
+		}
+	}
+	// Output:
+	// 8
+	// 18
+}
+```
+
+* context.Context는 계층 구조로 되어 있다.
+* 최상위 계층은 context.Background() 이며 프로그램이 끝날 때까지 절대로 취소되지 않고 계속 살아있다.
+* 하위 구조를 계속해서 트리 구조로 붙일 수 있다.
+* 상위 구조가 취소되면 그 하위에 있는 모든 컨텍스트도 취소된다.
+* 위 예제에서 ctx는 새로 생성된 컨텍스트가 들어가고, cancel은 해당 컨텍스트를 취소하는데 호출할 수 있는 함수가 들어간다.
+* WithDeadline, WithTimeout, WithValue등 다양한 방식의 컨텍스트를 생성할 수 있다.
+* 컨텍스트는 관례상 다른 구조체 안에 넣지 않고 함수의 맨 첫 번째 인자로 넘겨주고 받는다.
+
+
+
+### 7.3.8 요청과 응답 짝짓기
+
+* 분산처리를 하게 된다면 응답을 받은 고루틴의 순서는 무작위이기 때문에 어떤 요청에 대한 응답인지 알 길이 없다.
+* 이를 해결하기 위해 요청과 응답을 짝지어 어떤 요청에서 들어온 응답인지 알 수 있는 방법이다.
+
+
+
+간단한 방법은 채널로 자료를 넘겨줄 때 ID번호를 같이 넘겨서 ID 번호를 확인해보는 방법이 있다. 하지만 보내는 쪽에서는 ID를 보관하고 있지만 이 요청에 대한 응답을 다른 고루틴이 받아 갈 수 있다면 복잡해진다.
+
+
+
+:bulb: 그렇다면 해결책은?
+
+> 요청을 보낼 때 결과를 받고 싶은 채널을 함께 실어서 보내는 방법을 사용한다. 즉, 요청을 보내는 메시지에 응답을 받을 채널도 함께 넣어서 보낸다.
+
+
+
+```go
+type Request {
+    Num int
+    Resp chan Response
+}
+
+type Response {
+    Num int
+    WorkerID int
+}
+
+func PlusOneService(reqs <-chan Request, workerID int) {
+	for req := range reqs {
+        // 요청이 들어왔을 때 각 요청을 처리하는 고루틴을 만든다.
+		go func(req Request) {
+            // 요청에 대한 처리가 끝나면 response 채널을 닫는다.
+			defer close(req.Resp)
+            // 요청에 대한 결과를 처리하고 매칭된 응답 채널에 보낸다.
+			req.Resp <- Response{req.Num + 1, workerID}
+		}(req)
+	}
+}
+
+func main() {
+    reqs := make(chan Request)
+	defer close(reqs)
+
+    // 요청을 처리하는 3개의 고루틴을 만듦
+	for i := 0; i < 3; i++ {
+		go PlusOneService(reqs, i)
+	}
+
+	var wg sync.WaitGroup
+	for i := 3; i < 53; i += 10 {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			resps := make(chan Response)
+            // 처리할 값과 응답받을 response를 함께 넘김
+			reqs <- Request{i, resps}
+            // 응답 채널에서 온 값을 소진한다. 이후 Response 고루틴은 닫힌다.
+			log.Println(i, "=>", <-resps)
+		}(i)
+	}
+	wg.Wait()
+}
+```
+
+* 요청과 응답이 1:1이 아닌 요청에 대한 응답을 0개 이상이 되도록 처리할 수 있다.
+
+```go
+for resp := range resps {
+    fmt.Println(i, "=>", resp)
+}
+```
+
+* 이는 검색 요청의 결과처럼 여러 개의 결과를 받아야 하는 경우에 유용하다.
+
+
+
+### 7.3.9 동적으로 고루틴 이어붙이기
+
+
+
+:heavy_check_mark: prime의 배수를 걸러내는 고루틴을 계속해서 이어붙여 prime number를 출력하는 예제이다. 
+
+* 동적으로 채널을 통하여 고루틴들을 이어붙일 수 있다.
+
+* 2부터 숫자를 하나씩 증가 시켜가며 채널에 숫자를 보낸다. 
+* 고루틴에서는 이 채널에서 숫자를 받을 때마다 출력하고, 출력된 숫자의 배수가 되는 숫자들을 걸러내는 필터 고루틴을 붙인다.
+* 그러면 이미 출력된 숫자의 배수들은 다시는 출력되지 않게 된다. 따라서 소수만 출력되게 된다.
+
+
+
+:bulb: 파이프라인을 일직선으로 이어붙일 때 생성기 패턴으로 필터를 만들고 컨텍스트 등을 이용해 소수 생성기를 만든다.
+
+
+
+```go
+// start부터 정수를 무한정 생산하는 정수 생성기
+// step 만큼 더한 수를 계속해서 생성한다.
+// 외부에서 해당 고루틴을 멈출 수 있게 ctx.Done을 검사한다.
+func Range(ctx context.Context, start, step int) <-chan int {
+	out := make(chan int)
+	go func() {
+		defer close(out)
+		for i := start; ; i += step {
+			select {
+			case out <- i:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+    // 정수를 무한정 생산하는 채널을 반환한다.
+	return out
+}
+
+// 들어온 n의 배수를 걸러내는 파이프라인을 반환한다.
+func FilterMultiple(n int) IntPipe {
+    // 클로저를 이용해 다른 파이프라인에 연결해서 쓸 수 있도록 한다.
+	return func(ctx context.Context, in <-chan int) <-chan int {
+		out := make(chan int)
+		go func() {
+			defer close(out)
+			for x := range in {
+				if x%n == 0 {
+					continue
+				}
+                // 배수가 아닐경우 채널에 x를 계속해서 넣는다.
+				select {
+				case out <- x:
+				case <-ctx.Done():
+					return
+				}
+			}
+		}()
+		return out
+	}
+}
+
+// 무한 소수 생성기
+func Primes(ctx context.Context) <-chan int {
+    // 소수를 담는 채널을 반환한다.
+	out := make(chan int)
+	go func() {
+		defer close(out)
+        // 2부터 정수를 무한정 생성하는 채널
+		c := Range(ctx, 2, 1)
+		for {
+            // <-c가 막혀있을 때 ctx가 취소될 수 있고, out <- i 에서 막혀있다가 
+            // ctx가 취소될 수 있기 때문에 select를 다중으로 만들어야 한다.
+			select {
+			case i := <-c:
+				c = FilterMultiple(i)(ctx, c)
+				select {
+				case out <- i:
+				case <-ctx.Done():
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return out
+}
+
+func PrintPrimes(max int) {
+    // 취소 가능한 컨텍스트 생성
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	for prime := range Primes(ctx) {
+		if prime > max {
+			break
+		}
+		fmt.Print(prime, " ")
+	}
+	fmt.Println()
+}
+```
+
+* Primes에서 소수를 순서대로 꺼내어 이용하다가 범위가 넘어버리면 반복문을 빠져나간다.
+* 함수가 끝날 때 derfer cancel()로 인해 Primes에 넘어간 ctx가 취소되고, 생성되었던 고루틴들이 모두 소멸된다.
+
+
+
+### 7.3.10 주의점
+
+* 무조건 보내는 쪽에서 채널을 닫아야한다.
+* 채널을 닫지 않거나 위험하게 사용하는 실수는 범하지 않도록 정형화된 패턴을 잘 사용해야 한다.
+
+
+
+:heavy_check_mark: 잘못 사용하는 예 (생성자-소비자 패턴)
+
+```go
+func main() {
+    c := make(chan int)
+    done := make(chan int)
+    // 생성자
+    go func() {
+        for i := 0; i < 10; i++ {
+            c <- i
+        }
+        done <- true
+    }()
+	// 소비자
+    go func() {
+        for {
+            fmt.Println(<-c)
+        }
+    }()
+    <-done
+}
+```
+
+:bulb: 어떤 문제점들이 있을까?
+
+* 두 번째 고루틴이 끝나지 않는다.
+    * 첫 번째 고루틴에서 채널을 닫지 않아서 무한정 기다리는 고루틴(좀비)이 되어버린다.
+    * 만약 메인함수가 아닌 계속해서 호출되는 함수라면 고루틴이 무한정 쌓일것이므로 memory leak이 발생한다.
+* 메인 고루틴에서 <-done으로 인해 소비가 끝나기 전에 메인 고루틴이 끝나버릴 가능성이 있다.
+    * fmt.Println(<-c)는 한 줄이더라도 내부적으로는 여러 줄이 실행되기 때문에
+    * 이럴 경우 버그가 발생했을 때 이유를 찾기가 어려워진다.
+
+
+
+:bulb: 어떻게 해결할까?
+
+* 자료를 보내는 채널에서는 무조건 채널을 닫는다.
+* 받는쪽에서 중간에 return 할 수 있으므로 닫을 때는 defer를 이용한다. 그렇지 않으면 닫지 않고 종료될 수 있다.
+* 받는 쪽이 끝날 때까지 기다리는 것이 모든 자료의 처리가 끝나는 시점까지 기다리는 방법으로 더 안정적이다.
+    * 위 예제는 소비하는 쪽에서 done<-true를 했어야 한다.
+    * 위 예제는 소비자쪽에서 생산이 끝났는지 알 수 없으므로 이는 생산자쪽에서 채널을 닫는 것으로 신호를 줬어야했다.
+* 특별한 이유가 없으면 소비자쪽은 range를 이용해라.
+* WaitGroup을 사용해 두 고루틴이 모두 끝났을 때까지 기다리면 문제가 되질 않는다.
+* 끝났음을 알리는 done 채널은 자료를 보내는 쪽에서 결정할 사항이 아니다.
+    * 물론 자료를 보내는 쪽에서 채널을 닫아서 자료가 끝났음을 알리는 것이 더 낫다.
+    * 소비하는 쪽에서 done 채널에 값을 보내 보내는 쪽에 더 이상 자료를 보내지 말라는 cancel 요청으로 보는게 좋다.
+* done 채널에 자료를 보내 신호를 주는 것보다 close(done)으로 채널을 닫아 알리는것이 좋다.
+
+
+
+## 7.4 경쟁 상태
+
+공유된 자원에 둘 이상의 프로세스가 동시에 접근하여 잘못된 결과가 나올 수 있는 상태를 경쟁 상태 (race condition) 이라 한다. 이는 타이밍에 따라서 결과가 달라질 수 있기 때문에 고치기 번거로운 버그를 만들어 낸다.
+
+
+
+* 복잡한 상황에서 모든 고루틴들이 막혀서 교착 상태(deadlock)가 발생하는 경우가 있다.
+    * deadlock은 프로그램이 오류를 출력해주기 때문에 오류를 알 수 있다.
+* 하지만 쉽게 발견하지 못하는 버그들이 있다. 그 중 하나가 경쟁 상태 (race condition)이다.
+* 채널을 잘 활용하면 경쟁 상태 문제를 많이 해결할 수 있다.
+* 몇가지 경우에는 채널보다 sync 라이브러리를 활용하는게 더 간단하다.
+* Atomic 라이브러리를 활용하면 해당 연산이 반드시 원자성(atomicity)를 띄게 만들어줄 수 있다.
+
+
+
+### 7.4.1 동시성 디버그
+
+* 경쟁 상태 탐지 기능으로 -race 옵션을 줄 수 있다.
+
+```powershell
+$ go test -race mypkg		// to test the package
+$ go run -race mysrc.go		// to run the source file
+$ go build -race mycmd		// to build the command
+$ go install -race mypkg	// to install the package
+```
+
+* runtime.NumGoroutine()을 호출하여 현재 동작하는 고루틴의 개수를 알 수 있다.
+* runtime.NumCpu()로 현재 사용 가능한 CPU수를 알 수 있다.
+* runtime.GOMAXPROCS() 얼마나 많은 CPU를 사용할 것인지 통제할 수 있다.
+
+
+
+### 7.4.3 sync.Once
+
+* 한 번만 어떤 코드를 수행하고자 할 때 sync.Once를 사용할 수 있다.
+* 주로 분산처리를 할 때 initialize용으로 사용할 수 있다.
+* 채널을 이용해 같은 효과를 낼 수 있지만 분명한 의미전달을 위해 sync.Once를 사용하자.
+
+```go
+func main() {
+    var once sync.Once
+    var wg sync.WaitGroup
+    for i := 0; i < 3; i++ {
+        wg.Add(1)
+        go func(i int) {
+            defer wg.Done()
+            once.Do(func() {
+                fmt.Println("Initialized")
+            })
+            fmt.Println("Goroutine: ", i)
+        }(i)
+    }
+    wg.Wait()
+}
+// Output:
+// initialized
+// Goroutine 0
+// Goroutine 2
+// Goroutine 1
+```
+
+
+
+### 7.4.4 Mutex와 RWMutex
+
+* 뮤텍스(Mutex)는 상호 배타 잠금 기능이 있다. 
+* 동시에 둘 이상의 고루틴에서 코드의 흐름을 제어할 수 있다.
+* 뮤텍스를 가장 잘 활용하는 방법은 접근하고자 하는 자원 포인터와 뮤텍스 포인터를 하나의 구조체에 넣어두고 사용하는 방식이다.
+
+```go
+type Accessor struct {
+    R *Resource
+    L *sync.Mutex
+}
+
+// 생성
+Accessor{&resource, &sync.Mutex{}}
+
+// 사용
+func (acc *Accessor) Use() {
+    // do something
+    acc.L.Lock()
+    // Use acc.R
+    acc.L.Unlock()
+    // Do something else
+}
+```
+
+
+
+* sync.RWMutex는 동시에 읽는것은 허용하지만 한 군데서라도 쓰기를 시도하면 접근할 수 없게 한다.
+* 읽는 것은 문제가 되지 않기 때문에 RWMutex를 이용하면 성능상의 장점을 조금 가져갈 수 있다.
+* Go의 map에서 RWMutex를 이용하기 적합한 성질을 가지고 있다.
+
+
+
+```go
+type ConcurrentMap struct {
+    M map[string]string
+    L *sync.RWMutex
+}
+
+func (m ConcurrentMap) Get(key string) string {
+    m.L.RLock()
+    defer m.L.RUnlock()
+    return m.M[key]
+}
+
+func (m ConcurrentMap) Set(key, value string) {
+    m.L.Lock()
+    m.M[key] = value
+    m.L.Unlock()
+}
+
+func main() {
+    m := ConcurrentMap(map[string]string{}, &sync.RWMutex{})
+}
+```
+
+* RLock과 RUnlock을 사용하지 않고 Lock, Unlock만 사용한다면 Mutex와 동일하다.
+* Mutex, RWMutex 모두 sync.Locker 인터페이스를 구현하고 있다.
+
+
+
+## 7.5 문맥 전환
+
+문맥 전환(context switching)이란 **프로그램이 여러 프로세스 혹은 스레드에서 동작할 때 기존에 하던 작업들을 메모리에 보관해두고 다른 작업ㅇ르 시작하는 것**을 말한다. 문맥 전환은 비용이 발생하게 된다.
+
+
+
+* 하던 일을 중단하고 보관해두어야 하기 때문에 CPU 레지스터에 들어 있던 것들을 메모리에 보관한다.
+* 이때 CPU 파이프라인에서 다음 순서에 수행할 완료되지 못한 작업들은 버려지게 된다.
+
+
+
+Go 컴파일러는 주로 다음의 경우에 문맥 전환(context switching)을 하는 코드를 생성한다.
+
+* 파일이나 네트워크 연산처럼 시간이 오래 걸리는 입출력 연산이 있을 때
+* 채널에 보내거나 받을 때
+* go로 고루틴이 생성될 때
+* 가비지 컬렉션이 사이클을 지난 뒤
+
+
+
+Go에서 고루틴 간의 문맥 전환이 일어나는 것은 자연스럽다. **채널에 자료를 보내는 쪽에서 고루틴이 수행되다가 보내는 코드가 수행될 때, 같은 채널에서 데이터를 받는 다른 고루틴의 해당 부분으로 문맥 전환하면 자연스럽게 수행된다.** 
+
+이것을 컴파일 시간에 예측하면 변수들을 레지스터에 할당하는 전략을 더 잘 세울 수 있어서 성능 향상에 도움이 된다.
+
+
+
+* 고루틴을 새로 생성할 때에도 새로 생성된 고루틴으로 건너뛸 수 있다. 그리고 가비지 컬렉션 사이클이 지난 뒤에 문맥 전환이 가능하다.
+* time.Sleep(0)을 이용해 문맥 전환을 강제로 시킬 수 있다.
