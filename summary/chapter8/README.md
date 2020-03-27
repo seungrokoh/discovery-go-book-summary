@@ -151,7 +151,7 @@ func assertEqualString(t *testing.T, expected, actual string) {
     }
 }
 
-func assertEqualString(t *testing.T, expected, actual int) {
+func assertEqualInt(t *testing.T, expected, actual int) {
     if expected != actual {
         t.Errorf("%d != %d" expected, actual)
     }
@@ -210,7 +210,7 @@ func Example() {
 
 * 컨테이너에 어떤 알고리즘을 적용하고자 할 때, 그 컨테이너가 담고 있는 자료형은 큰 상관이 없이 구현할 수 있어야 하고 그것을 위하여, 혹은 더 효율적으로 구현하기 위하여 제네릭을 사용한다.
 * sort, heap 인터페이스에서 대소를 비교하는 부분을 인덱스를 이용한다.
-* 두 자료를 직접 비교하기 보단 인텍스를 주고 자료를 비교해 제네릭을 활용하지 않고 원하는 일을 할 수 있다.
+* 두 자료를 직접 비교하기 보단 인덱스를 주고 자료를 비교해 제네릭을 활용하지 않고 원하는 일을 할 수 있다.
 * 특정 자료형에 국한되지 않고 출력하거나, 네트워크로 보낼 수 있는 알고리즘은 인터페이스를 활용하면 가능하다.
 * 인터페이스를 이용하여 새로운 자료형에 대해서 해당 인터페이스에 맞게 구현해 사용한다.
 
@@ -573,7 +573,7 @@ func (r Rectangle) Area() float32 {
 * Has-A 관계의 경우 전통적인 객체지향에서도 상속보다는 객체 구성(object composition)이다.
 * Go에서는 재사용하고자 하는 구현의 자료형 변수를 struct에 내장하면 된다. Has-A 관계는 말 그대로 구현을 필드로 가지고 있으면 된다.
 * Is-A 관계의 상속에서는 많은 경우에 추상 클래스를 상속한다.
-* Go에서는 인터페이스를 이용하면 Is-A관계를 나타낼 수 있따.
+* Go에서는 인터페이스를 이용하면 Is-A관계를 나타낼 수 있다.
 
 
 
@@ -729,6 +729,7 @@ impl := reflect.TypeOf((*RectangleCircum)(nil)).Elem().Implements(
 
 * 클로져를 이용하여 호출하는 반복자, 콜백을 넘겨주어 함수가 모든 원소에 대하여 호출되게 하는 반복자, 인터페이스를 이용한 반복자, 채널을 이용한 반복자 모두가 해당된다.
 * 채널을 이용한 반복자를 이용할 때, **중간에 중단할 수 있어야 하는 경우 반드시 done 채널 또는 context.Context를 받아서 처리할 수 있도록 작성해야 한다.**
+* 무언가를 만들때 의식적으로 채널을 이용해서 만들어보자. (익숙해져야지)
 
 
 
@@ -759,13 +760,13 @@ type WinLabel struct{}
 
 func (WinLabel) Paint() { fmt.Println("win label paint") }
 
-// WinButton is a Button implementation for Mac.
+// MacButton is a Button implementation for Mac.
 type MacButton struct{}
 
 func (MacButton) Paint()   { fmt.Println("mac button paint") }
 func (MacButton) OnClick() { fmt.Println("mac button click") }
 
-// WinLabel is a Label implementation for Mac.
+// MacLabel is a Label implementation for Mac.
 type MacLabel struct{}
 
 func (MacLabel) Paint() { fmt.Println("mac label paint") }
