@@ -83,8 +83,8 @@ if err := MyFunc(); err != nil {}
 ```
 
 * 조건문 안에서 변수를 새로 만들 수 있어 에러 처리할 때 유용함
-* 위의 err 변수는 조건문을 벗어나면 소멸된
-* Go의 에러처리 방식은 현재 문맥에서 처리하 수 없을 때에는 해당 에러를 그대로 반환
+* 위의 err 변수는 조건문을 벗어나면 소멸됨
+* Go의 에러처리 방식은 현재 문맥에서 처리할 수 없을 때에는 해당 에러를 그대로 반환
 
 :heavy_check_mark: 새로운 에러 생성
 ```go
@@ -95,7 +95,7 @@ or
 return fmt.Errorf("stringlist: too long line at %d", count)
 ```
 * 에러를 호출한 곳으로 반환할 때 가장 단순한 방법은 문자열 메세지를 주고 받는 방법
-* 부가 정보를 추가하여 돌려줄 떄에는 fmt.Errorf()를 사용
+* 부가 정보를 추가하여 돌려줄 때에는 fmt.Errorf()를 사용
 * 하지만 넘겨준 숫자는 사람이 보기에는 좋지만 프로그램이 처리하기에는 편리하지 않음. 이건 error 처리에서 배우기
 
 ## 4.1.4 명명된 결과 인자
@@ -128,7 +128,7 @@ func WriteTo(w io.Writer, lines... string) (n int64, err error)
 WriteTo(w, "hello", "world", "Go language")
 ```
 
-* 슬라이스를 넘기기 위해서 뒤에 점 세개를 붙이면 넘길 수이 있다.
+* 슬라이스를 넘기기 위해서 뒤에 점 세개를 붙이면 넘길 수 있다.
 
 ```go
 lines := []string{"hello", "world", "Go language"}
@@ -148,7 +148,7 @@ func add(a, b int) int {
     return a + b
 }
 ```
-* 여기서 순수하게 함수의 값만 표한하려면? 이름을 빼보자.
+* 여기서 순수하게 함수의 값만 표현하려면? 이름을 빼보자.
 
 ```go
 func (a, b int) int {
@@ -182,7 +182,7 @@ func Example_funcLiteralVar() {
     // Hello!
 }
 ```
-* 위의 세 가지 예느 모두 동일하다.
+* 위의 세 가지 예는 모두 동일하다.
 * 함수 리터럴을 호출하기 위해 ()를 붙여 해당 함수를 호출한다.
 
 ## 4.2.2 고차 함수
@@ -429,7 +429,7 @@ func ExampleNewIntGenerator() {
 ```
 
 * NewIntGenerator는 클로저를 반환하는 고계함수이다.
-* 반환하는 함수 리터럴이 속해 있는 ㅅ으코프 안에 있는 next 변수에 접근하고 있다.
+* 반환하는 함수 리터럴이 속해 있는 스코프 안에 있는 next 변수에 접근하고 있다.
 * 따라서 이 함수는 next 변수와 함께 세트로 묶인다.
 * 만약 NewIntGenerator()를 여러번 호출하여 함수를 여러개 가지고 있다면 각 함수가 갖고 있는 next도 분리되어 있다.
 
